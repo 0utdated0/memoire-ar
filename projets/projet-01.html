@@ -328,6 +328,7 @@
 
     <div id="reglage-pied">
       <span id="reglage-etat">en attente</span>
+      <button type="button" id="reglage-expo">verrou expo</button>
       <button type="button" id="reglage-diag">relevé 5 s</button>
       <button type="button" id="reglage-copier">copier</button>
       <button type="button" id="reglage-reset">défaut</button>
@@ -372,11 +373,45 @@
 
   let DEFINITION_CAMERA = 1280;   // largeur idéale demandée
 
-  const camInfo = { demande: 0, obtenu: '', capacites: '', tentatives: '', crochet: 'non' };
+  let VERROU_EXPO = false;
+  const camInfo = { demande: 0, obtenu: '', capacites: '', tentatives: '', crochet: 'non',
+                    reglagesDispo: '', verrou: 'non tenté' };
 
   // Forcer la définition sur la piste déjà ouverte. Bien plus fiable que
   // d'intercepter getUserMedia : sur plusieurs navigateurs le remplacement
   // de navigator.mediaDevices.getUserMedia ne prend tout simplement pas.
+  // L'exposition automatique poursuit sans arrêt la lumière : la même
+  // vignette est claire puis sombre d'une image à l'autre, les points
+  // d'intérêt changent d'aspect, la pose bouge. Verrouiller ce qui peut
+  // l'être calme la mesure. Très inégalement supporté selon les navigateurs.
+  async function camVerrouillerExposition() {
+    try {
+      const sys = scene && scene.systems && scene.systems['mindar-image-system'];
+      const flux = sys && sys.video && sys.video.srcObject;
+      const piste = flux && flux.getVideoTracks && flux.getVideoTracks()[0];
+      if (!piste || !piste.getCapabilities) return 'non supporté';
+      const cap = piste.getCapabilities();
+      const dispo = [];
+      ['exposureMode', 'whiteBalanceMode', 'focusMode'].forEach((k) => {
+        if (cap[k]) dispo.push(k.replace('Mode', '') + ':' + cap[k].join('/'));
+      });
+      camInfo.reglagesDispo = dispo.length ? dispo.join(' ') : 'aucun mode déclaré';
+      const avance = [];
+      if (cap.exposureMode && cap.exposureMode.indexOf('continuous') >= 0) avance.push({ exposureMode: 'continuous' });
+      if (cap.whiteBalanceMode && cap.whiteBalanceMode.indexOf('continuous') >= 0) avance.push({ whiteBalanceMode: 'continuous' });
+      if (VERROU_EXPO) {
+        avance.length = 0;
+        if (cap.exposureMode && cap.exposureMode.indexOf('manual') >= 0) avance.push({ exposureMode: 'manual' });
+        if (cap.whiteBalanceMode && cap.whiteBalanceMode.indexOf('manual') >= 0) avance.push({ whiteBalanceMode: 'manual' });
+      }
+      if (!avance.length) { camInfo.verrou = VERROU_EXPO ? 'demandé, refusé' : 'auto'; return camInfo.verrou; }
+      await piste.applyConstraints({ advanced: avance });
+      const r = piste.getSettings ? piste.getSettings() : {};
+      camInfo.verrou = (VERROU_EXPO ? 'verrouillé' : 'auto') + ' expo:' + (r.exposureMode || '?') + ' bb:' + (r.whiteBalanceMode || '?');
+      return camInfo.verrou;
+    } catch (e) { camInfo.verrou = 'refusé'; return camInfo.verrou; }
+  }
+
   async function camForcerDefinition() {
     try {
       const sys = scene && scene.systems && scene.systems['mindar-image-system'];
@@ -902,6 +937,13 @@
       reglageChanger('mincf', R_DEFAUTS.mincf, false);
     });
 
+    document.getElementById('reglage-expo').addEventListener('click', (e) => {
+      VERROU_EXPO = !VERROU_EXPO;
+      e.currentTarget.style.background = VERROU_EXPO ? 'var(--signal)' : '';
+      e.currentTarget.style.color = VERROU_EXPO ? '#fff' : '';
+      camVerrouillerExposition().then((r) => reglageMajEtat(r));
+    });
+
     document.getElementById('reglage-diag').addEventListener('click', () => {
       const sys = scene.systems && scene.systems['mindar-image-system'];
       if (!sys || !sys.controller) { reglageMajEtat('ouvrez la caméra d\'abord'); return; }
@@ -927,6 +969,8 @@
           'flux ' + (v ? v.videoWidth + 'x' + v.videoHeight : '?') + ' demande ' + camInfo.demande,
           'camera peut ' + (camInfo.capacites || 'non declare') + ' | essais ' + (camInfo.tentatives || 'aucun'),
           'crochet getUserMedia ' + camInfo.crochet + ' | obtenu ' + (camInfo.obtenu || '?'),
+          'modes camera ' + (camInfo.reglagesDispo || 'inconnus'),
+          'exposition ' + camInfo.verrou,
           'poses recues ' + D.n + ' soit ' + (D.n / duree).toFixed(1) + '/s',
           'intervalle median ' + med.toFixed(0) + ' ms, 90e centile ' + p90.toFixed(0) + ' ms',
           'rotation brute moy ' + moy(D.sBrut).toFixed(3) + ' deg, max ' + D.maxBrut.toFixed(2) + ' deg',
@@ -987,7 +1031,7 @@
         setTimeout(() => {
           const n = reglageAppliquer();
           reglageBrancherCompteur();
-          camForcerDefinition().then(() => reglageMajFlux());
+          camForcerDefinition().then(camVerrouillerExposition).then(() => reglageMajFlux());
           reglageMajFlux();
           reglageMajEtat(n > 0 ? n + ' filtre(s) suivi(s)' : 'valeurs prises au démarrage');
         }, 800);
