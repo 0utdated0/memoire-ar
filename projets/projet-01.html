@@ -158,7 +158,7 @@
   }
   #reglage-etat{font-size:10px;color:#767c83;flex:1;line-height:1.3}
   #reglage-flux{
-    margin-top:7px;font-size:10px;color:#767c83;line-height:1.4;
+    margin-top:7px;font-size:10px;color:#767c83;line-height:1.5;white-space:pre-line;
   }
   #reglage-ligne{
     display:none;margin-top:9px;padding:8px;background:#0d0f11;
@@ -195,7 +195,7 @@
 <!-- ================= AR ANCRÉE SUR LA VIGNETTE ================= -->
 <!-- À RENSEIGNER : chemin du .mind et du .glb -->
 <a-scene
-  mindar-image="imageTargetSrc: ../cibles/projet-01.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.001; filterBeta: 10; warmupTolerance: 5; missTolerance: 5"
+  mindar-image="imageTargetSrc: ../cibles/projet-01.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.001; filterBeta: 1; warmupTolerance: 5; missTolerance: 5"
   color-space="sRGB"
   renderer="colorManagement: true, physicallyCorrectLights, antialias: true"
   vr-mode-ui="enabled: false"
@@ -249,7 +249,7 @@
     <div class="curseur">
       <div class="curseur-tete"><span>filterBeta</span><b id="val-beta">1000</b></div>
       <input type="range" id="cur-beta" min="0" max="1000" step="1" aria-label="filterBeta">
-      <p class="curseur-note">Plus bas = plus calme mais plus mou. Plus haut = plus réactif mais ça vibre.</p>
+      <p class="curseur-note">Ouverture du filtre en fonction de la vitesse. Bas, le bruit est rejeté mais un vrai mouvement traîne. Haut, la maquette colle au mouvement mais le bruit passe.</p>
       <div class="presets" data-pour="beta">
         <button type="button" data-v="1000">1000</button>
         <button type="button" data-v="100">100</button>
@@ -262,7 +262,7 @@
     <div class="curseur">
       <div class="curseur-tete"><span>filterMinCF</span><b id="val-mincf">0.0001</b></div>
       <input type="range" id="cur-mincf" min="0" max="1000" step="1" aria-label="filterMinCF">
-      <p class="curseur-note">Fréquence de coupure. Plus bas = plus lissé, mais la maquette traîne derrière la vignette.</p>
+      <p class="curseur-note">Lissage de fond, quand rien ne bouge. Plus bas = plus calme à l'arrêt, mais plus long à se remettre en place.</p>
       <div class="presets" data-pour="mincf">
         <button type="button" data-v="0.001">0.001</button>
         <button type="button" data-v="0.0001">0.0001</button>
@@ -364,6 +364,139 @@
     };
   })();
 
+
+  /* =========================================================
+     LISSAGE DE LA POSE
+     Deux défauts de MindAR 1.2.5 sont corrigés ici. Bloc à
+     garder dans la version définitive.
+
+     1. Il lisse les seize nombres de la matrice de pose
+        séparément, chacun avec son propre coefficient. Le
+        résultat n'est plus une rotation : il cisaille, et
+        l'orientation cesse de suivre fidèlement la caméra.
+
+     2. Il date ses images avec Date.now(), dont la résolution
+        est la milliseconde. Deux images dans la même
+        milliseconde donnent une division par zéro : la pose
+        devient NaN, définitivement, jusqu'à la prochaine
+        redétection. Et une image très rapprochée suffit à
+        faire passer la mesure brute, non lissée, à l'écran :
+        c'est une source de tremblement qu'aucun réglage ne
+        rattrape.
+
+     On neutralise donc son filtre et on lisse proprement :
+     décomposition, slerp sur la rotation (qui reste ainsi
+     toujours une rotation valide), un-euro sur la position,
+     horloge sub-milliseconde et pas de temps borné.
+     ========================================================= */
+
+  let LISSAGE_MINCF = 0.001;
+  let LISSAGE_BETA  = 1;
+
+  const lissage = {
+    installe: false, actif: false, tPrec: 0,
+    pPrec: null, qPrec: null, qBrutPrec: null, dernier: null,
+    dPos: [0, 0, 0], vAng: 0,
+    brut: 0, lisse: 0, rejets: 0,
+    _aBrut: 0, _aLisse: 0, _n: 0,
+  };
+
+  function lissageReset() {
+    lissage.actif = false; lissage.pPrec = null; lissage.qPrec = null;
+    lissage.qBrutPrec = null; lissage.dernier = null;
+    lissage.dPos = [0, 0, 0]; lissage.vAng = 0;
+  }
+
+  function lissageFiltrer(m16) {
+    const T = AFRAME.THREE;
+    for (let i = 0; i < 16; i++) {
+      if (!Number.isFinite(m16[i])) { lissage.rejets++; return lissage.dernier; }
+    }
+    const M = new T.Matrix4().fromArray(m16);
+    const p = new T.Vector3(), q = new T.Quaternion(), e = new T.Vector3();
+    M.decompose(p, q, e);
+
+    const t = performance.now();
+    if (!lissage.actif) {
+      lissage.actif = true; lissage.tPrec = t;
+      lissage.pPrec = p.clone(); lissage.qPrec = q.clone(); lissage.qBrutPrec = q.clone();
+      lissage.dernier = m16.slice();
+      return lissage.dernier;
+    }
+    const te = Math.min(250, Math.max(4, t - lissage.tPrec));
+    lissage.tPrec = t;
+    const coef = (te, co) => { const r = 2 * Math.PI * co * te; return r / (r + 1); };
+    const ad = coef(te, 0.001);
+
+    // Mesure du bruit brut, en degrés d'une image à l'autre.
+    lissage._aBrut += lissage.qBrutPrec.angleTo(q) * 180 / Math.PI;
+    lissage.qBrutPrec.copy(q);
+
+    const np = new T.Vector3();
+    const axes = ['x', 'y', 'z'];
+    for (let i = 0; i < 3; i++) {
+      const ax = axes[i];
+      const d = (p[ax] - lissage.pPrec[ax]) / te;
+      lissage.dPos[i] = ad * d + (1 - ad) * lissage.dPos[i];
+      const a = coef(te, LISSAGE_MINCF + LISSAGE_BETA * Math.abs(lissage.dPos[i]));
+      np[ax] = a * p[ax] + (1 - a) * lissage.pPrec[ax];
+    }
+
+    const va = lissage.qPrec.angleTo(q) / te;
+    lissage.vAng = ad * va + (1 - ad) * lissage.vAng;
+    const aq = Math.min(1, coef(te, LISSAGE_MINCF + LISSAGE_BETA * lissage.vAng));
+    const nq = lissage.qPrec.clone().slerp(q, aq);
+
+    lissage._aLisse += lissage.qPrec.angleTo(nq) * 180 / Math.PI;
+    lissage._n++;
+    lissage.pPrec.copy(np); lissage.qPrec.copy(nq);
+    lissage.dernier = new T.Matrix4().compose(np, nq, e).toArray();
+    return lissage.dernier;
+  }
+
+  function lissageInstaller() {
+    if (lissage.installe) return true;
+    const el = document.getElementById('cible');
+    const cmp = el && el.components && el.components['mindar-image-target'];
+    if (!cmp || typeof cmp.updateWorldMatrix !== 'function') return false;
+    const origine = cmp.updateWorldMatrix.bind(cmp);
+    cmp.updateWorldMatrix = function (wm) {
+      if (wm === null) { lissageReset(); return origine(null); }
+      const f = lissageFiltrer(wm);
+      return origine(f === null ? wm : f);
+    };
+    lissage.installe = true;
+    return true;
+  }
+
+  // Neutralise le filtre interne : on lui fait rendre la mesure telle quelle.
+  function lissageNeutraliserMindAR() {
+    try {
+      const sys = scene && scene.systems && scene.systems['mindar-image-system'];
+      const ctrl = sys && sys.controller;
+      if (!ctrl || !ctrl.trackingStates) return 0;
+      let n = 0;
+      ctrl.trackingStates.forEach((e) => {
+        if (e && e.filter && !e.filter.__neutralise) {
+          e.filter.filter = function (t, x) { return x; };
+          e.filter.__neutralise = true; n++;
+        }
+      });
+      return n;
+    } catch (err) { return 0; }
+  }
+
+  setInterval(function () {
+    lissageInstaller();
+    lissageNeutraliserMindAR();
+    if (lissage._n > 0) {
+      lissage.brut = lissage._aBrut / lissage._n;
+      lissage.lisse = lissage._aLisse / lissage._n;
+    } else { lissage.brut = 0; lissage.lisse = 0; }
+    lissage._aBrut = 0; lissage._aLisse = 0; lissage._n = 0;
+  }, 1000);
+  lissageInstaller();
+
   /* ================= DÉBUT REGLAGE =================
 
      MODE D'EMPLOI
@@ -392,7 +525,7 @@
 
   const PANNEAU_REGLAGE = true;
 
-  const R_DEFAUTS = { beta: 10, mincf: 0.001, def: 1280, scale: 0.25, miss: 5 };
+  const R_DEFAUTS = { beta: 1, mincf: 0.001, def: 1280, scale: 0.25, miss: 5 };
   const R_ETIQ_DEF = { 640: '480p', 1280: '720p', 1920: '1080p' };
   // Échelles logarithmiques : les deux paramètres se lisent en ordres
   // de grandeur, pas en pas réguliers.
@@ -440,9 +573,11 @@
   function reglageMajFlux() {
     const sys = scene.systems && scene.systems['mindar-image-system'];
     const v = sys && sys.video;
-    reglage.ligneFlux.textContent = (!v || !v.videoWidth)
-      ? 'flux : caméra non démarrée'
-      : 'flux : ' + v.videoWidth + ' \u00d7 ' + v.videoHeight + '  \u00b7  ' + rIps + ' i/s';
+    if (!v || !v.videoWidth) { reglage.ligneFlux.textContent = 'flux : caméra non démarrée'; return; }
+    reglage.ligneFlux.textContent =
+      v.videoWidth + ' \u00d7 ' + v.videoHeight + '  \u00b7  ' + rIps + ' i/s\n' +
+      'secousse brute ' + lissage.brut.toFixed(2) + '\u00b0  \u2192  lissée ' +
+      lissage.lisse.toFixed(2) + '\u00b0' + (lissage.rejets ? '  \u00b7  ' + lissage.rejets + ' pose(s) NaN écartée(s)' : '');
   }
 
   // Lit le réglage dans l'adresse de la page, s'il y est.
@@ -477,6 +612,8 @@
   function reglageAppliquer() {
     try {
       // La taille ne passe pas par MindAR : effet immédiat, meme camera fermee.
+      LISSAGE_MINCF = reglage.valeurs.mincf;
+      LISSAGE_BETA  = reglage.valeurs.beta;
       const maquette = document.getElementById('maquette');
       if (maquette) {
         const v = reglage.valeurs.scale;
@@ -491,30 +628,10 @@
       if (!ctrl) return 0;                     // caméra pas encore démarrée
       // processVideo() reconstruit les filtres à partir de ces deux
       // champs : les renseigner couvre un redémarrage de la session.
-      ctrl.filterMinCF = reglage.valeurs.mincf;
-      ctrl.filterBeta  = reglage.valeurs.beta;
-      // Relue a chaque image par le suivi : effet immediat.
-      ctrl.missTolerance = reglage.valeurs.miss;
+      ctrl.missTolerance = reglage.valeurs.miss;   // relue a chaque image
 
-      // Les filtres déjà instanciés relisent minCutOff et beta à chaque
-      // image : les corriger en place suffit, l'effet est immédiat.
-      let touches = 0;
-      const corriger = (o) => {
-        if (o && typeof o === 'object' && 'minCutOff' in o && 'beta' in o) {
-          o.minCutOff = reglage.valeurs.mincf;
-          o.beta = reglage.valeurs.beta;
-          touches++;
-        }
-      };
-      let etats = ctrl.trackingStates || ctrl.trackingState || [];
-      if (!Array.isArray(etats)) etats = [etats];
-      etats.forEach((e) => {
-        if (!e || typeof e !== 'object') return;
-        corriger(e);
-        Object.values(e).forEach(corriger);
-      });
-      corriger(ctrl.filter);
-      return touches;
+      lissageNeutraliserMindAR();
+      return lissage.installe ? 1 : 0;
     } catch (err) {
       // Le panneau est un outil de mise au point : il ne doit jamais
       // faire tomber la page.
