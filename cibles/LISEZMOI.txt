@@ -1,0 +1,4 @@
+Placez ici le fichier .mind produit par le compilateur MindAR :
+https://hiukim.github.io/mind-ar-js-doc/tools/compile
+
+Le sous-dossier sources/ conserve les vignettes PNG d'origine.

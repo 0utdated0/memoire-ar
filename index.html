@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Architectures spéculatives - modèles en réalité augmentée</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --beton:#E3E2DD;
+    --beton-fonce:#C9C7C0;
+    --encre:#14171A;
+    --encre-clair:#5C6168;
+    --signal:#2B2BFF;
+    --trait:1px solid rgba(20,23,26,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--beton);
+    color:var(--encre);
+    font-family:"Space Grotesk",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding:clamp(20px,6vw,64px);
+    max-width:820px;
+    margin:0 auto;
+    min-height:100vh;
+  }
+  .cartouche{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--encre-clair);
+    border-bottom:var(--trait);
+    padding-bottom:10px;
+    display:flex;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  h1{
+    font-size:clamp(30px,8vw,54px);
+    font-weight:700;
+    letter-spacing:-.03em;
+    line-height:1.02;
+    margin:36px 0 18px;
+    text-wrap:balance;
+  }
+  .chapeau{
+    font-size:16px;
+    line-height:1.55;
+    color:var(--encre-clair);
+    max-width:52ch;
+    margin-bottom:48px;
+  }
+  .liste{list-style:none}
+  .projet{border-top:var(--trait)}
+  .projet:last-child{border-bottom:var(--trait)}
+  .projet a{
+    display:grid;
+    grid-template-columns:auto 1fr auto;
+    gap:18px;
+    align-items:baseline;
+    padding:22px 4px;
+    text-decoration:none;
+    color:inherit;
+    transition:background .18s ease,padding .18s ease;
+  }
+  .projet a:hover,.projet a:focus-visible{
+    background:var(--beton-fonce);
+    padding-left:14px;
+  }
+  .projet a:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
+  .ref{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:12px;
+    color:var(--signal);
+    letter-spacing:.06em;
+  }
+  .titre{font-size:21px;font-weight:500;letter-spacing:-.015em}
+  .fleche{font-size:18px;color:var(--encre-clair)}
+  footer{
+    margin-top:56px;
+    padding-top:18px;
+    border-top:var(--trait);
+    font-family:"IBM Plex Mono",monospace;
+    font-size:11px;
+    line-height:1.8;
+    color:var(--encre-clair);
+  }
+  footer a{color:var(--encre)}
+</style>
+</head>
+<body>
+
+<div class="cartouche">
+  <span>Mémoire · Architectures spéculatives</span>
+  <span>Réalité augmentée</span>
+</div>
+
+<h1>Les bâtiments qui n'existent pas.</h1>
+
+<p class="chapeau">
+  Chaque projet du mémoire est modélisé en trois dimensions et consultable en réalité augmentée.
+  Scannez la vignette imprimée en marge du texte, autorisez l'accès à la caméra, puis pointez à
+  nouveau la page : la maquette se lève du papier.
+</p>
+
+<ul class="liste">
+  <li class="projet">
+    <a href="./projets/projet-01.html">
+      <span class="ref">01</span>
+      <span class="titre">Cube de test</span>
+      <span class="fleche">→</span>
+    </a>
+  </li>
+  <!-- Décommentez au fur et à mesure que vous créez les pages.
+  <li class="projet">
+    <a href="./projets/projet-02.html">
+      <span class="ref">02</span>
+      <span class="titre">Titre du deuxième projet</span>
+      <span class="fleche">→</span>
+    </a>
+  </li>
+  <li class="projet">
+    <a href="./projets/projet-03.html">
+      <span class="ref">03</span>
+      <span class="titre">Titre du troisième projet</span>
+      <span class="fleche">→</span>
+    </a>
+  </li>
+  -->
+</ul>
+
+<footer>
+  Modélisation Blender · glTF (Khronos Group) · MindAR · hébergement autonome<br>
+  Prénom Nom · École · Année
+</footer>
+
+</body>
+</html>

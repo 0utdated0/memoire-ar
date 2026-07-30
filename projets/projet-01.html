@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Projet 01 - réalité augmentée</title>
+
+<!-- =========================================================
+     GABARIT À DUPLIQUER POUR CHAQUE PROJET.
+     Cherchez les blocs marqués « À RENSEIGNER ».
+     ========================================================= -->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+<script type="module" src="https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
+
+<style>
+  :root{
+    --beton:#E3E2DD;
+    --encre:#14171A;
+    --encre-clair:#5C6168;
+    --signal:#2B2BFF;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{
+    background:var(--beton);
+    color:var(--encre);
+    font-family:"Space Grotesk",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* --- Écran d'accueil, avant autorisation caméra --- */
+  #accueil{
+    position:fixed;inset:0;z-index:30;
+    display:flex;flex-direction:column;justify-content:space-between;
+    padding:clamp(22px,7vw,44px);
+    background:var(--beton);
+  }
+  .cartouche{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--encre-clair);
+  }
+  .ref{color:var(--signal)}
+  h1{
+    font-size:clamp(28px,9vw,44px);font-weight:700;
+    letter-spacing:-.03em;line-height:1.03;margin-bottom:16px;
+    text-wrap:balance;
+  }
+  .consigne{
+    font-size:15px;line-height:1.55;color:var(--encre-clair);max-width:38ch;
+  }
+  .bloc-central{display:flex;flex-direction:column;justify-content:center;flex:1;padding:32px 0}
+  button.declencheur{
+    width:100%;
+    border:none;
+    background:var(--encre);
+    color:var(--beton);
+    font-family:"Space Grotesk",sans-serif;
+    font-size:17px;font-weight:500;letter-spacing:-.01em;
+    padding:20px;
+    border-radius:2px;
+    cursor:pointer;
+  }
+  button.declencheur:focus-visible{outline:3px solid var(--signal);outline-offset:3px}
+  .secondaire{
+    display:block;text-align:center;margin-top:16px;
+    font-family:"IBM Plex Mono",monospace;font-size:12px;
+    color:var(--encre-clair);text-decoration:underline;
+  }
+
+  /* --- Bandeau d'état pendant la session AR --- */
+  #etat{
+    position:fixed;left:0;right:0;bottom:0;z-index:20;
+    padding:14px 18px calc(14px + env(safe-area-inset-bottom));
+    background:rgba(20,23,26,.86);
+    color:#fff;
+    font-family:"IBM Plex Mono",monospace;
+    font-size:12px;letter-spacing:.04em;text-align:center;
+    display:none;
+  }
+  #etat.visible{display:block}
+  #quitter{
+    position:fixed;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:20;
+    display:none;background:rgba(20,23,26,.86);color:#fff;border:none;
+    font-family:"IBM Plex Mono",monospace;font-size:12px;
+    padding:10px 14px;border-radius:2px;cursor:pointer;
+  }
+  #quitter.visible{display:block}
+
+  /* --- Repli: pose libre dans l'espace --- */
+  #repli{position:fixed;inset:0;z-index:25;background:var(--beton);display:none}
+  #repli.visible{display:block}
+  model-viewer{width:100%;height:100%;--poster-color:transparent}
+  #retour{
+    position:fixed;top:calc(14px + env(safe-area-inset-top));left:14px;z-index:26;
+    background:var(--encre);color:var(--beton);border:none;
+    font-family:"IBM Plex Mono",monospace;font-size:12px;
+    padding:10px 14px;border-radius:2px;cursor:pointer;
+  }
+
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<!-- ================= ACCUEIL ================= -->
+<div id="accueil">
+  <div class="cartouche"><span class="ref">01</span> — Architectures spéculatives</div>
+
+  <div class="bloc-central">
+    <!-- À RENSEIGNER : titre et légende du projet -->
+    <h1>Titre du premier projet</h1>
+    <p class="consigne">
+      Autorisez l'accès à la caméra, puis pointez à nouveau la vignette imprimée.
+      La maquette se lève de la page. Gardez la vignette dans le cadre.
+    </p>
+  </div>
+
+  <div>
+    <button class="declencheur" id="lancer">Ouvrir la maquette</button>
+    <a class="secondaire" href="#" id="vers-repli">Poser le bâtiment dans la pièce</a>
+  </div>
+</div>
+
+<!-- ================= AR ANCRÉE SUR LA VIGNETTE ================= -->
+<!-- À RENSEIGNER : chemin du .mind et du .glb -->
+<a-scene
+  mindar-image="imageTargetSrc: ../cibles/projet-01.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.005"
+  color-space="sRGB"
+  renderer="colorManagement: true, physicallyCorrectLights, antialias: true"
+  vr-mode-ui="enabled: false"
+  device-orientation-permission-ui="enabled: false">
+
+  <a-assets>
+    <a-asset-item id="batiment" src="../modeles/projet-01.glb"></a-asset-item>
+  </a-assets>
+
+  <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+  <a-entity id="cible" mindar-image-target="targetIndex: 0">
+    <!--
+      Repère de la cible : X vers la droite de la vignette, Y vers le haut,
+      Z sort du papier. Le modèle glTF est en Y-up, d'où la rotation +90 sur X
+      pour qu'il se dresse perpendiculairement à la page.
+      Si le bâtiment s'enfonce dans le papier au lieu d'en sortir, passez à -90.
+
+      scale : 1 = la largeur de la vignette.
+        scale = hauteur voulue (cm) ÷ largeur vignette (cm) ÷ hauteur du modèle
+      position : le troisième nombre décolle le modèle du papier. À laisser à 0
+        si l'origine du modèle est au sol, ce qui est la bonne pratique.
+    -->
+    <a-gltf-model
+      src="#batiment"
+      rotation="90 0 0"
+      position="0 0 0"
+      scale="0.6 0.6 0.6">
+    </a-gltf-model>
+
+    <a-light type="ambient" intensity="0.9"></a-light>
+    <a-light type="directional" intensity="0.7" position="1 2 1"></a-light>
+  </a-entity>
+</a-scene>
+
+<div id="etat">Pointez la vignette imprimée</div>
+<button id="quitter">Fermer</button>
+
+<!-- ================= REPLI : POSE LIBRE ================= -->
+<div id="repli">
+  <button id="retour">← Retour</button>
+  <model-viewer
+    src="../modeles/projet-01.glb"
+    ar
+    ar-modes="webxr scene-viewer quick-look"
+    ar-scale="fixed"
+    camera-controls
+    shadow-intensity="1"
+    alt="Maquette du premier projet">
+  </model-viewer>
+</div>
+
+<script>
+  const accueil  = document.getElementById('accueil');
+  const etat     = document.getElementById('etat');
+  const quitter  = document.getElementById('quitter');
+  const repli    = document.getElementById('repli');
+  const scene    = document.querySelector('a-scene');
+  const cible    = document.getElementById('cible');
+
+  // iOS exige un geste utilisateur avant d'ouvrir la caméra :
+  // c'est le clic sur ce bouton qui déclenche la demande d'autorisation.
+  document.getElementById('lancer').addEventListener('click', async () => {
+    accueil.style.display = 'none';
+    etat.classList.add('visible');
+    quitter.classList.add('visible');
+    try {
+      await scene.systems['mindar-image-system'].start();
+    } catch (e) {
+      etat.textContent = "Caméra indisponible. Utilisez « Poser dans la pièce ».";
+    }
+  });
+
+  cible.addEventListener('targetFound', () => {
+    etat.textContent = 'Maquette ancrée';
+  });
+  cible.addEventListener('targetLost', () => {
+    etat.textContent = 'Pointez la vignette imprimée';
+  });
+
+  quitter.addEventListener('click', () => {
+    scene.systems['mindar-image-system'].stop();
+    etat.classList.remove('visible');
+    quitter.classList.remove('visible');
+    accueil.style.display = 'flex';
+  });
+
+  document.getElementById('vers-repli').addEventListener('click', (e) => {
+    e.preventDefault();
+    repli.classList.add('visible');
+  });
+  document.getElementById('retour').addEventListener('click', () => {
+    repli.classList.remove('visible');
+  });
+</script>
+
+</body>
+</html>
