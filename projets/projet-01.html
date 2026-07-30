@@ -361,19 +361,50 @@
 
   let DEFINITION_CAMERA = 1280;   // largeur idéale demandée
 
+  const camInfo = { demande: 0, obtenu: '', capacites: '', tentatives: '' };
+
   (function contraindreCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
     const origine = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-    navigator.mediaDevices.getUserMedia = function (c) {
+    navigator.mediaDevices.getUserMedia = async function (c) {
+      // Ne PAS imposer de rapport 16/9 : certains téléphones servent un flux
+      // portrait, la contrainte devient alors insatisfiable et le navigateur
+      // retombe sur sa plus basse définition. On vise donc un carré, ce qui
+      // pousse les deux dimensions vers le haut sans imposer d'orientation.
+      const D = DEFINITION_CAMERA;
+      camInfo.demande = D;
       if (c && c.video && typeof c.video === 'object') {
         c = Object.assign({}, c, { video: Object.assign({}, c.video, {
-          width:  { ideal: DEFINITION_CAMERA },
-          height: { ideal: Math.round(DEFINITION_CAMERA * 9 / 16) },
-          // best effort : ignoré par les navigateurs qui ne savent pas
+          width:  { ideal: D },
+          height: { ideal: D },
           advanced: [{ focusMode: 'continuous' }]
         })});
       }
-      return origine(c);
+      const flux = await origine(c);
+      try {
+        const piste = flux.getVideoTracks()[0];
+        const cap = piste.getCapabilities ? piste.getCapabilities() : null;
+        if (cap && cap.width && cap.height) {
+          camInfo.capacites = 'l ' + cap.width.min + '-' + cap.width.max +
+                              ' h ' + cap.height.min + '-' + cap.height.max;
+        }
+        let r = piste.getSettings ? piste.getSettings() : {};
+        camInfo.tentatives = (r.width || '?') + 'x' + (r.height || '?');
+        // Si le navigateur a servi bien moins que demandé, on réessaie
+        // explicitement sur la plus grande définition qu'il déclare savoir faire.
+        const petit = !r.width || Math.max(r.width, r.height) < D * 0.75;
+        if (petit && cap && cap.width && cap.height) {
+          const cw = Math.min(D, cap.width.max || D);
+          const ch = Math.min(D, cap.height.max || D);
+          try {
+            await piste.applyConstraints({ width: { ideal: cw }, height: { ideal: ch } });
+            r = piste.getSettings();
+            camInfo.tentatives += ' puis ' + (r.width || '?') + 'x' + (r.height || '?');
+          } catch (e2) { camInfo.tentatives += ' (2e essai refusé)'; }
+        }
+        camInfo.obtenu = (r.width || '?') + 'x' + (r.height || '?');
+      } catch (e) { camInfo.obtenu = 'inconnu'; }
+      return flux;
     };
   })();
 
@@ -423,7 +454,7 @@
     lissage.actif = false; lissage.pPrec = null; lissage.qPrec = null;
     lissage.qBrutPrec = null; lissage.dernier = null;
     lissage.dPos = [0, 0, 0]; lissage.vAng = 0;
-    lissage.tampon = []; lissage.pAff = null; lissage.qAff = null;
+    lissage.tampon = []; lissage.pAff = null; lissage.qAff = null; lissage.pBrutPrec = null;
     lissage.enMouvement = true;
   }
 
@@ -465,6 +496,7 @@
       lissage.actif = true; lissage.tPrec = t;
       lissage.pPrec = p.clone(); lissage.qPrec = q.clone(); lissage.qBrutPrec = qBrut.clone();
       lissage.pAff = p.clone(); lissage.qAff = q.clone(); lissage.enMouvement = true;
+      lissage.pBrutPrec = pBrut.clone();
       lissage.dernier = m16.slice();
       return lissage.dernier;
     }
@@ -477,6 +509,8 @@
     lissage._dBrutCourant = lissage.qBrutPrec.angleTo(qBrut) * 180 / Math.PI;
     lissage._aBrut += lissage._dBrutCourant;
     lissage.qBrutPrec.copy(qBrut);
+    lissage._dPosCourant = lissage.pBrutPrec ? lissage.pBrutPrec.distanceTo(pBrut) : 0;
+    if (!lissage.pBrutPrec) lissage.pBrutPrec = pBrut.clone(); else lissage.pBrutPrec.copy(pBrut);
 
     const np = new T.Vector3();
     const axes = ['x', 'y', 'z'];
@@ -498,10 +532,12 @@
     lissage._n++;
     const D = lissage.diag;
     if (D) {
-      D.n++; D.brut += lissage.qBrutPrec ? 0 : 0;
+      D.n++;
       D.sBrut += lissage._dBrutCourant; D.sLisse += dLisse;
       D.te.push(te);
       if (lissage._dBrutCourant > D.maxBrut) D.maxBrut = lissage._dBrutCourant;
+      D.sPos += lissage._dPosCourant; D.dist += pBrut.length();
+      if (lissage._dPosCourant > D.maxPos) D.maxPos = lissage._dPosCourant;
     }
     lissage.pPrec.copy(np); lissage.qPrec.copy(nq);
 
@@ -801,7 +837,8 @@
       let vues = 0;
       const compteVue = () => vues++;
       cible.addEventListener('targetFound', compteVue);
-      lissage.diag = { n: 0, sBrut: 0, sLisse: 0, maxBrut: 0, fige: 0, ecartAff: 0, te: [] };
+      lissage.diag = { n: 0, sBrut: 0, sLisse: 0, maxBrut: 0, fige: 0, ecartAff: 0, te: [],
+                       sPos: 0, maxPos: 0, dist: 0 };
       const t0 = performance.now();
       reglageMajEtat('relevé en cours, ne bougez pas');
       setTimeout(() => {
@@ -815,10 +852,14 @@
         const moy = (x) => D.n ? x / D.n : 0;
         const L = [
           'RELEVE ' + duree.toFixed(1) + ' s',
-          'flux ' + (v ? v.videoWidth + 'x' + v.videoHeight : '?') + ' demande ' + DEFINITION_CAMERA,
+          'flux ' + (v ? v.videoWidth + 'x' + v.videoHeight : '?') + ' demande ' + camInfo.demande,
+          'camera peut ' + (camInfo.capacites || 'non declare') + ' | essais ' + camInfo.tentatives,
           'poses recues ' + D.n + ' soit ' + (D.n / duree).toFixed(1) + '/s',
           'intervalle median ' + med.toFixed(0) + ' ms, 90e centile ' + p90.toFixed(0) + ' ms',
-          'secousse brute moy ' + moy(D.sBrut).toFixed(2) + ' deg, max ' + D.maxBrut.toFixed(2) + ' deg',
+          'rotation brute moy ' + moy(D.sBrut).toFixed(3) + ' deg, max ' + D.maxBrut.toFixed(2) + ' deg',
+          'position brute moy ' + (1000 * moy(D.sPos)).toFixed(2) + ' millimes, max ' + (1000 * D.maxPos).toFixed(1) +
+            ' | distance ' + moy(D.dist).toFixed(2),
+          'soit ' + (moy(D.dist) ? (100 * moy(D.sPos) / moy(D.dist)).toFixed(3) : '?') + ' % de la distance par image',
           'apres lissage moy ' + moy(D.sLisse).toFixed(2) + ' deg',
           'ecart a l affiche moy ' + moy(D.ecartAff).toFixed(2) + ' deg',
           'zone morte active ' + (D.n ? Math.round(100 * D.fige / D.n) : 0) + ' % du temps (seuil ' + ZONE_MORTE + ')',
