@@ -283,6 +283,18 @@
     </div>
 
     <div class="curseur">
+      <div class="curseur-tete"><span>zone morte</span><b id="val-zm">1</b></div>
+      <p class="curseur-note">En degrés. Tant que la pose bouge moins que ça, la maquette n'est pas actualisée du tout : elle est vraiment immobile, au lieu de frémir. Au-delà, elle repart. C'est le réglage qui agit le plus sur l'impression de stabilité.</p>
+      <div class="presets" data-pour="zm">
+        <button type="button" data-v="0">0</button>
+        <button type="button" data-v="0.5">0.5</button>
+        <button type="button" data-v="1">1</button>
+        <button type="button" data-v="2">2</button>
+        <button type="button" data-v="3">3</button>
+      </div>
+    </div>
+
+    <div class="curseur">
       <div class="curseur-tete"><span>ténacité du suivi</span><b id="val-miss">5</b></div>
       <p class="curseur-note">Nombre d'images perdues tolérées avant de lâcher la pose et de repartir d'une détection propre. Élevé, la maquette reste accrochée à une pose fausse. Bas, elle disparaît plus souvent mais revient juste.</p>
       <div class="presets" data-pour="miss">
@@ -392,19 +404,47 @@
 
   let LISSAGE_MINCF = 0.001;
   let LISSAGE_BETA  = 1;
+  // Zone morte, en degrés. En deçà, la pose affichée n'est pas
+  // actualisée du tout : immobilité vraie, et non résiduelle.
+  let ZONE_MORTE = 1;
 
   const lissage = {
     installe: false, actif: false, tPrec: 0,
     pPrec: null, qPrec: null, qBrutPrec: null, dernier: null,
     dPos: [0, 0, 0], vAng: 0,
+    tampon: [], pAff: null, qAff: null, enMouvement: true, fige: 0,
     brut: 0, lisse: 0, rejets: 0,
-    _aBrut: 0, _aLisse: 0, _n: 0,
+    _aBrut: 0, _aLisse: 0, _n: 0, _fige: 0,
   };
 
   function lissageReset() {
     lissage.actif = false; lissage.pPrec = null; lissage.qPrec = null;
     lissage.qBrutPrec = null; lissage.dernier = null;
     lissage.dPos = [0, 0, 0]; lissage.vAng = 0;
+    lissage.tampon = []; lissage.pAff = null; lissage.qAff = null;
+    lissage.enMouvement = true;
+  }
+
+  // Médiane sur trois poses : une valeur aberrante isolée est écartée
+  // au lieu d'être seulement atténuée, ce qu'un passe-bas ne sait pas faire.
+  function lissageMediane(p, q) {
+    const T = AFRAME.THREE;
+    lissage.tampon.push({ p: p.clone(), q: q.clone() });
+    if (lissage.tampon.length > 3) lissage.tampon.shift();
+    const n = lissage.tampon.length;
+    if (n < 3) return { p: p, q: q };
+    const mp = new T.Vector3();
+    ['x', 'y', 'z'].forEach((ax) => {
+      const v = lissage.tampon.map((e) => e.p[ax]).sort((a, b) => a - b);
+      mp[ax] = v[1];
+    });
+    let meilleur = 0, minSomme = Infinity;
+    for (let i = 0; i < n; i++) {
+      let somme = 0;
+      for (let j = 0; j < n; j++) if (i !== j) somme += lissage.tampon[i].q.angleTo(lissage.tampon[j].q);
+      if (somme < minSomme) { minSomme = somme; meilleur = i; }
+    }
+    return { p: mp, q: lissage.tampon[meilleur].q };
   }
 
   function lissageFiltrer(m16) {
@@ -413,13 +453,16 @@
       if (!Number.isFinite(m16[i])) { lissage.rejets++; return lissage.dernier; }
     }
     const M = new T.Matrix4().fromArray(m16);
-    const p = new T.Vector3(), q = new T.Quaternion(), e = new T.Vector3();
-    M.decompose(p, q, e);
+    const pBrut = new T.Vector3(), qBrut = new T.Quaternion(), e = new T.Vector3();
+    M.decompose(pBrut, qBrut, e);
+    const med = lissageMediane(pBrut, qBrut);
+    const p = med.p, q = med.q;
 
     const t = performance.now();
     if (!lissage.actif) {
       lissage.actif = true; lissage.tPrec = t;
-      lissage.pPrec = p.clone(); lissage.qPrec = q.clone(); lissage.qBrutPrec = q.clone();
+      lissage.pPrec = p.clone(); lissage.qPrec = q.clone(); lissage.qBrutPrec = qBrut.clone();
+      lissage.pAff = p.clone(); lissage.qAff = q.clone(); lissage.enMouvement = true;
       lissage.dernier = m16.slice();
       return lissage.dernier;
     }
@@ -429,8 +472,8 @@
     const ad = coef(te, 0.001);
 
     // Mesure du bruit brut, en degrés d'une image à l'autre.
-    lissage._aBrut += lissage.qBrutPrec.angleTo(q) * 180 / Math.PI;
-    lissage.qBrutPrec.copy(q);
+    lissage._aBrut += lissage.qBrutPrec.angleTo(qBrut) * 180 / Math.PI;
+    lissage.qBrutPrec.copy(qBrut);
 
     const np = new T.Vector3();
     const axes = ['x', 'y', 'z'];
@@ -450,7 +493,24 @@
     lissage._aLisse += lissage.qPrec.angleTo(nq) * 180 / Math.PI;
     lissage._n++;
     lissage.pPrec.copy(np); lissage.qPrec.copy(nq);
-    lissage.dernier = new T.Matrix4().compose(np, nq, e).toArray();
+
+    // Zone morte à double seuil : on ne repart que si l'écart dépasse
+    // franchement le seuil, et on se refige nettement en dessous, pour
+    // éviter de basculer sans arrêt à la frontière.
+    const ecartA = lissage.qAff.angleTo(nq) * 180 / Math.PI;
+    const ecartP = lissage.pAff.distanceTo(np);
+    const seuilP = ZONE_MORTE * 0.008;
+    if (ZONE_MORTE <= 0) {
+      lissage.enMouvement = true;
+    } else if (lissage.enMouvement) {
+      if (ecartA < ZONE_MORTE * 0.35 && ecartP < seuilP * 0.35) lissage.enMouvement = false;
+    } else if (ecartA > ZONE_MORTE || ecartP > seuilP) {
+      lissage.enMouvement = true;
+    }
+    if (lissage.enMouvement) { lissage.pAff.copy(np); lissage.qAff.copy(nq); }
+    else lissage._fige++;
+
+    lissage.dernier = new T.Matrix4().compose(lissage.pAff, lissage.qAff, e).toArray();
     return lissage.dernier;
   }
 
@@ -493,7 +553,8 @@
       lissage.brut = lissage._aBrut / lissage._n;
       lissage.lisse = lissage._aLisse / lissage._n;
     } else { lissage.brut = 0; lissage.lisse = 0; }
-    lissage._aBrut = 0; lissage._aLisse = 0; lissage._n = 0;
+    lissage.fige = lissage._n > 0 ? Math.round(100 * lissage._fige / (lissage._n || 1)) : 0;
+    lissage._aBrut = 0; lissage._aLisse = 0; lissage._n = 0; lissage._fige = 0;
   }, 1000);
   lissageInstaller();
 
@@ -525,7 +586,7 @@
 
   const PANNEAU_REGLAGE = true;
 
-  const R_DEFAUTS = { beta: 1, mincf: 0.001, def: 1280, scale: 0.25, miss: 5 };
+  const R_DEFAUTS = { beta: 1, mincf: 0.001, def: 1280, scale: 0.25, miss: 5, zm: 1 };
   const R_ETIQ_DEF = { 640: '480p', 1280: '720p', 1920: '1080p' };
   // Échelles logarithmiques : les deux paramètres se lisent en ordres
   // de grandeur, pas en pas réguliers.
@@ -546,7 +607,8 @@
                 mincf: document.getElementById('val-mincf'),
                 def:  document.getElementById('val-def'),
                 scale: document.getElementById('val-scale'),
-                miss: document.getElementById('val-miss') },
+                miss: document.getElementById('val-miss'),
+                zm:   document.getElementById('val-zm') },
     ligneEtat: document.getElementById('reglage-etat'),
     ligneFlux: document.getElementById('reglage-flux'),
     ligneTexte: document.getElementById('reglage-ligne'),
@@ -577,15 +639,17 @@
     reglage.ligneFlux.textContent =
       v.videoWidth + ' \u00d7 ' + v.videoHeight + '  \u00b7  ' + rIps + ' i/s\n' +
       'secousse brute ' + lissage.brut.toFixed(2) + '\u00b0  \u2192  lissée ' +
-      lissage.lisse.toFixed(2) + '\u00b0' + (lissage.rejets ? '  \u00b7  ' + lissage.rejets + ' pose(s) NaN écartée(s)' : '');
+      lissage.lisse.toFixed(2) + '\u00b0\n' +
+      'maquette figée ' + lissage.fige + ' % du temps' +
+      (lissage.rejets ? '  \u00b7  ' + lissage.rejets + ' NaN écartée(s)' : '');
   }
 
   // Lit le réglage dans l'adresse de la page, s'il y est.
   function reglageLireAdresse() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-    for (const cle of ['beta', 'mincf', 'def', 'scale', 'miss']) {
+    for (const cle of ['beta', 'mincf', 'def', 'scale', 'miss', 'zm']) {
       const v = parseFloat(p.get(cle));
-      if (isFinite(v) && v > 0) reglage.valeurs[cle] = v;
+      if (isFinite(v) && (v > 0 || cle === 'zm')) reglage.valeurs[cle] = v;
     }
     DEFINITION_CAMERA = reglage.valeurs.def;
   }
@@ -597,6 +661,7 @@
     p.set('def', String(reglage.valeurs.def));
     p.set('scale', rFmt(reglage.valeurs.scale));
     p.set('miss', String(reglage.valeurs.miss));
+    p.set('zm', rFmt(reglage.valeurs.zm));
     history.replaceState(null, '', location.pathname + '#' + p.toString());
   }
 
@@ -614,6 +679,7 @@
       // La taille ne passe pas par MindAR : effet immédiat, meme camera fermee.
       LISSAGE_MINCF = reglage.valeurs.mincf;
       LISSAGE_BETA  = reglage.valeurs.beta;
+      ZONE_MORTE    = reglage.valeurs.zm;
       const maquette = document.getElementById('maquette');
       if (maquette) {
         const v = reglage.valeurs.scale;
@@ -640,7 +706,7 @@
   }
 
   function reglageAfficher() {
-    for (const cle of ['beta', 'mincf', 'def', 'scale', 'miss']) {
+    for (const cle of ['beta', 'mincf', 'def', 'scale', 'miss', 'zm']) {
       reglage.sorties[cle].textContent = (cle === 'def')
         ? (R_ETIQ_DEF[reglage.valeurs.def] || reglage.valeurs.def + ' px')
         : rFmt(reglage.valeurs[cle]);
@@ -684,7 +750,7 @@
     reglageLireAdresse();
     reglage.boite.hidden = false;
 
-    for (const cle of ['def', 'miss']) {
+    for (const cle of ['def', 'miss', 'zm']) {
       document.querySelector('.presets[data-pour="' + cle + '"]')
         .addEventListener('click', (e) => {
           const b = e.target.closest('button');
