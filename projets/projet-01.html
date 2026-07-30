@@ -125,9 +125,12 @@
     display:none;margin-top:8px;padding:14px;
     background:rgba(20,23,26,.93);color:#fff;border-radius:2px;
     backdrop-filter:blur(6px);
+    /* Le panneau ne doit jamais recouvrir le bouton de lancement. */
+    max-height:calc(100vh - 210px);
+    overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
   }
   #reglage.ouvert #reglage-corps{display:block}
-  .curseur{margin-bottom:16px}
+  .curseur{margin-bottom:14px}
   .curseur-tete{
     display:flex;justify-content:space-between;align-items:baseline;
     font-size:10px;letter-spacing:.08em;text-transform:uppercase;
@@ -192,7 +195,7 @@
 <!-- ================= AR ANCRÉE SUR LA VIGNETTE ================= -->
 <!-- À RENSEIGNER : chemin du .mind et du .glb -->
 <a-scene
-  mindar-image="imageTargetSrc: ../cibles/projet-01.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 1000; warmupTolerance: 8; missTolerance: 15"
+  mindar-image="imageTargetSrc: ../cibles/projet-01.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.001; filterBeta: 10; warmupTolerance: 5; missTolerance: 5"
   color-space="sRGB"
   renderer="colorManagement: true, physicallyCorrectLights, antialias: true"
   vr-mode-ui="enabled: false"
@@ -217,10 +220,11 @@
         si l'origine du modèle est au sol, ce qui est la bonne pratique.
     -->
     <a-gltf-model
+      id="maquette"
       src="#batiment"
       rotation="90 0 0"
       position="0 0 0"
-      scale="0.6 0.6 0.6">
+      scale="0.25 0.25 0.25">
     </a-gltf-model>
 
     <a-light type="ambient" intensity="0.9"></a-light>
@@ -263,6 +267,29 @@
         <button type="button" data-v="0.001">0.001</button>
         <button type="button" data-v="0.0001">0.0001</button>
         <button type="button" data-v="0.00001">1e-5</button>
+      </div>
+    </div>
+
+    <div class="curseur">
+      <div class="curseur-tete"><span>taille de la maquette</span><b id="val-scale">0.25</b></div>
+      <input type="range" id="cur-scale" min="0" max="1000" step="1" aria-label="taille de la maquette">
+      <p class="curseur-note">1 = la largeur de la vignette. Le cube de test mesure 2 unités, donc 0.25 lui donne la moitié de la vignette.</p>
+      <div class="presets" data-pour="scale">
+        <button type="button" data-v="0.1">0.1</button>
+        <button type="button" data-v="0.25">0.25</button>
+        <button type="button" data-v="0.5">0.5</button>
+        <button type="button" data-v="1">1</button>
+      </div>
+    </div>
+
+    <div class="curseur">
+      <div class="curseur-tete"><span>ténacité du suivi</span><b id="val-miss">5</b></div>
+      <p class="curseur-note">Nombre d'images perdues tolérées avant de lâcher la pose et de repartir d'une détection propre. Élevé, la maquette reste accrochée à une pose fausse. Bas, elle disparaît plus souvent mais revient juste.</p>
+      <div class="presets" data-pour="miss">
+        <button type="button" data-v="3">3</button>
+        <button type="button" data-v="5">5</button>
+        <button type="button" data-v="10">10</button>
+        <button type="button" data-v="20">20</button>
       </div>
     </div>
 
@@ -365,11 +392,11 @@
 
   const PANNEAU_REGLAGE = true;
 
-  const R_DEFAUTS = { beta: 1000, mincf: 0.0001, def: 1280 };
+  const R_DEFAUTS = { beta: 10, mincf: 0.001, def: 1280, scale: 0.25, miss: 5 };
   const R_ETIQ_DEF = { 640: '480p', 1280: '720p', 1920: '1080p' };
   // Échelles logarithmiques : les deux paramètres se lisent en ordres
   // de grandeur, pas en pas réguliers.
-  const R_ECHELLES = { beta: [-2, 4], mincf: [-5, -1] };
+  const R_ECHELLES = { beta: [-2, 4], mincf: [-5, -1], scale: [-1.7, 0.3] };
 
   const rVal = (pos, [a, b]) => Math.pow(10, a + (pos / 1000) * (b - a));
   const rPos = (val, [a, b]) => Math.max(0, Math.min(1000,
@@ -380,10 +407,13 @@
     valeurs: { ...R_DEFAUTS },
     boite: document.getElementById('reglage'),
     curseurs: { beta: document.getElementById('cur-beta'),
-                mincf: document.getElementById('cur-mincf') },
+                mincf: document.getElementById('cur-mincf'),
+                scale: document.getElementById('cur-scale') },
     sorties:  { beta: document.getElementById('val-beta'),
                 mincf: document.getElementById('val-mincf'),
-                def:  document.getElementById('val-def') },
+                def:  document.getElementById('val-def'),
+                scale: document.getElementById('val-scale'),
+                miss: document.getElementById('val-miss') },
     ligneEtat: document.getElementById('reglage-etat'),
     ligneFlux: document.getElementById('reglage-flux'),
     ligneTexte: document.getElementById('reglage-ligne'),
@@ -418,7 +448,7 @@
   // Lit le réglage dans l'adresse de la page, s'il y est.
   function reglageLireAdresse() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-    for (const cle of ['beta', 'mincf', 'def']) {
+    for (const cle of ['beta', 'mincf', 'def', 'scale', 'miss']) {
       const v = parseFloat(p.get(cle));
       if (isFinite(v) && v > 0) reglage.valeurs[cle] = v;
     }
@@ -430,6 +460,8 @@
     p.set('beta',  rFmt(reglage.valeurs.beta));
     p.set('mincf', rFmt(reglage.valeurs.mincf));
     p.set('def', String(reglage.valeurs.def));
+    p.set('scale', rFmt(reglage.valeurs.scale));
+    p.set('miss', String(reglage.valeurs.miss));
     history.replaceState(null, '', location.pathname + '#' + p.toString());
   }
 
@@ -444,6 +476,12 @@
   // instanciés, sinon rien ne bouge tant qu'on n'a pas rechargé.
   function reglageAppliquer() {
     try {
+      // La taille ne passe pas par MindAR : effet immédiat, meme camera fermee.
+      const maquette = document.getElementById('maquette');
+      if (maquette) {
+        const v = reglage.valeurs.scale;
+        maquette.setAttribute('scale', v + ' ' + v + ' ' + v);
+      }
       const sys = scene && scene.systems && scene.systems['mindar-image-system'];
       if (!sys) return -1;                     // bibliothèque pas encore chargée
       sys.filterMinCF = reglage.valeurs.mincf;
@@ -455,6 +493,8 @@
       // champs : les renseigner couvre un redémarrage de la session.
       ctrl.filterMinCF = reglage.valeurs.mincf;
       ctrl.filterBeta  = reglage.valeurs.beta;
+      // Relue a chaque image par le suivi : effet immediat.
+      ctrl.missTolerance = reglage.valeurs.miss;
 
       // Les filtres déjà instanciés relisent minCutOff et beta à chaque
       // image : les corriger en place suffit, l'effet est immédiat.
@@ -483,7 +523,7 @@
   }
 
   function reglageAfficher() {
-    for (const cle of ['beta', 'mincf', 'def']) {
+    for (const cle of ['beta', 'mincf', 'def', 'scale', 'miss']) {
       reglage.sorties[cle].textContent = (cle === 'def')
         ? (R_ETIQ_DEF[reglage.valeurs.def] || reglage.valeurs.def + ' px')
         : rFmt(reglage.valeurs[cle]);
@@ -512,7 +552,7 @@
       reglageMajEtat(sys && sys.controller ? 'fermez puis rouvrez' : 'prise au démarrage');
       return;
     }
-    if (!depuisCurseur) {
+    if (!depuisCurseur && reglage.curseurs[cle]) {
       reglage.curseurs[cle].value = rPos(valeur, R_ECHELLES[cle]);
     }
     reglageAfficher();
@@ -527,15 +567,17 @@
     reglageLireAdresse();
     reglage.boite.hidden = false;
 
-    document.querySelector('.presets[data-pour="def"]')
-      .addEventListener('click', (e) => {
-        const b = e.target.closest('button');
-        if (b) reglageChanger('def', parseFloat(b.dataset.v), false);
-      });
+    for (const cle of ['def', 'miss']) {
+      document.querySelector('.presets[data-pour="' + cle + '"]')
+        .addEventListener('click', (e) => {
+          const b = e.target.closest('button');
+          if (b) reglageChanger(cle, parseFloat(b.dataset.v), false);
+        });
+    }
 
     setInterval(() => { rIps = rCadres; rCadres = 0; reglageMajFlux(); }, 1000);
 
-    for (const cle of ['beta', 'mincf']) {
+    for (const cle of ['beta', 'mincf', 'scale']) {
       reglage.curseurs[cle].value = rPos(reglage.valeurs[cle], R_ECHELLES[cle]);
       reglage.curseurs[cle].addEventListener('input', (e) => {
         reglageChanger(cle, rVal(parseFloat(e.target.value), R_ECHELLES[cle]), true);
