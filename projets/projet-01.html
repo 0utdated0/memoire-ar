@@ -154,6 +154,9 @@
     font-size:11px;padding:7px 9px;border-radius:2px;cursor:pointer;
   }
   #reglage-etat{font-size:10px;color:#767c83;flex:1;line-height:1.3}
+  #reglage-flux{
+    margin-top:7px;font-size:10px;color:#767c83;line-height:1.4;
+  }
   #reglage-ligne{
     display:none;margin-top:9px;padding:8px;background:#0d0f11;
     font-size:10px;color:#c9ced3;word-break:break-all;
@@ -263,11 +266,22 @@
       </div>
     </div>
 
+    <div class="curseur">
+      <div class="curseur-tete"><span>définition caméra</span><b id="val-def">720p</b></div>
+      <p class="curseur-note">Le navigateur ouvre la caméra en basse définition, bien en deçà de l'appareil photo. Monter la définition rend l'image nette et donne plus de matière au suivi, mais coûte des images par seconde. Prise en compte à la réouverture de la caméra.</p>
+      <div class="presets" data-pour="def">
+        <button type="button" data-v="640">480p</button>
+        <button type="button" data-v="1280">720p</button>
+        <button type="button" data-v="1920">1080p</button>
+      </div>
+    </div>
+
     <div id="reglage-pied">
       <span id="reglage-etat">en attente</span>
       <button type="button" id="reglage-copier">copier</button>
       <button type="button" id="reglage-reset">défaut</button>
     </div>
+    <div id="reglage-flux">flux : caméra non démarrée</div>
     <div id="reglage-ligne"></div>
   </div>
 </div>
@@ -294,6 +308,34 @@
   const repli    = document.getElementById('repli');
   const scene    = document.querySelector('a-scene');
   const cible    = document.getElementById('cible');
+
+  /* =========================================================
+     DÉFINITION DU FLUX CAMÉRA
+     MindAR demande la caméra sans aucune contrainte de taille.
+     Le navigateur sert alors sa valeur par défaut, souvent
+     640 x 480, que l'affichage étire ensuite plein écran : d'où
+     une image très floue, sans rapport avec l'appareil photo.
+     On demande donc explicitement mieux. Ce bloc est à garder
+     dans la version définitive.
+     ========================================================= */
+
+  let DEFINITION_CAMERA = 1280;   // largeur idéale demandée
+
+  (function contraindreCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    const origine = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = function (c) {
+      if (c && c.video && typeof c.video === 'object') {
+        c = Object.assign({}, c, { video: Object.assign({}, c.video, {
+          width:  { ideal: DEFINITION_CAMERA },
+          height: { ideal: Math.round(DEFINITION_CAMERA * 9 / 16) },
+          // best effort : ignoré par les navigateurs qui ne savent pas
+          advanced: [{ focusMode: 'continuous' }]
+        })});
+      }
+      return origine(c);
+    };
+  })();
 
   /* ================= DÉBUT REGLAGE =================
 
@@ -323,7 +365,8 @@
 
   const PANNEAU_REGLAGE = true;
 
-  const R_DEFAUTS = { beta: 1000, mincf: 0.0001 };
+  const R_DEFAUTS = { beta: 1000, mincf: 0.0001, def: 1280 };
+  const R_ETIQ_DEF = { 640: '480p', 1280: '720p', 1920: '1080p' };
   // Échelles logarithmiques : les deux paramètres se lisent en ordres
   // de grandeur, pas en pas réguliers.
   const R_ECHELLES = { beta: [-2, 4], mincf: [-5, -1] };
@@ -339,25 +382,54 @@
     curseurs: { beta: document.getElementById('cur-beta'),
                 mincf: document.getElementById('cur-mincf') },
     sorties:  { beta: document.getElementById('val-beta'),
-                mincf: document.getElementById('val-mincf') },
+                mincf: document.getElementById('val-mincf'),
+                def:  document.getElementById('val-def') },
     ligneEtat: document.getElementById('reglage-etat'),
+    ligneFlux: document.getElementById('reglage-flux'),
     ligneTexte: document.getElementById('reglage-ligne'),
     suivi: 'en attente',
   };
 
+  let rCadres = 0, rIps = 0;
+
+  // Compte les images réellement traitées par le suivi, pas celles
+  // affichées : c'est ce chiffre qui dit si la définition coûte trop cher.
+  function reglageBrancherCompteur() {
+    try {
+      const ctrl = scene.systems['mindar-image-system'].controller;
+      if (!ctrl || ctrl.__compteBranche) return;
+      const origine = ctrl.onUpdate;
+      ctrl.onUpdate = function (d) {
+        if (d && d.type === 'processDone') rCadres++;
+        return origine.apply(this, arguments);
+      };
+      ctrl.__compteBranche = true;
+    } catch (e) {}
+  }
+
+  function reglageMajFlux() {
+    const sys = scene.systems && scene.systems['mindar-image-system'];
+    const v = sys && sys.video;
+    reglage.ligneFlux.textContent = (!v || !v.videoWidth)
+      ? 'flux : caméra non démarrée'
+      : 'flux : ' + v.videoWidth + ' \u00d7 ' + v.videoHeight + '  \u00b7  ' + rIps + ' i/s';
+  }
+
   // Lit le réglage dans l'adresse de la page, s'il y est.
   function reglageLireAdresse() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-    for (const cle of ['beta', 'mincf']) {
+    for (const cle of ['beta', 'mincf', 'def']) {
       const v = parseFloat(p.get(cle));
       if (isFinite(v) && v > 0) reglage.valeurs[cle] = v;
     }
+    DEFINITION_CAMERA = reglage.valeurs.def;
   }
 
   function reglageEcrireAdresse() {
     const p = new URLSearchParams();
     p.set('beta',  rFmt(reglage.valeurs.beta));
     p.set('mincf', rFmt(reglage.valeurs.mincf));
+    p.set('def', String(reglage.valeurs.def));
     history.replaceState(null, '', location.pathname + '#' + p.toString());
   }
 
@@ -411,8 +483,10 @@
   }
 
   function reglageAfficher() {
-    for (const cle of ['beta', 'mincf']) {
-      reglage.sorties[cle].textContent = rFmt(reglage.valeurs[cle]);
+    for (const cle of ['beta', 'mincf', 'def']) {
+      reglage.sorties[cle].textContent = (cle === 'def')
+        ? (R_ETIQ_DEF[reglage.valeurs.def] || reglage.valeurs.def + ' px')
+        : rFmt(reglage.valeurs[cle]);
       const groupe = document.querySelector('.presets[data-pour="' + cle + '"]');
       groupe.querySelectorAll('button').forEach((b) => {
         b.classList.toggle('actif',
@@ -428,6 +502,16 @@
 
   function reglageChanger(cle, valeur, depuisCurseur) {
     reglage.valeurs[cle] = valeur;
+    if (cle === 'def') {
+      // La définition se fige à l'ouverture du flux : elle ne peut pas
+      // changer en pleine session, il faut fermer puis rouvrir.
+      DEFINITION_CAMERA = valeur;
+      reglageAfficher();
+      reglageEcrireAdresse();
+      const sys = scene.systems && scene.systems['mindar-image-system'];
+      reglageMajEtat(sys && sys.controller ? 'fermez puis rouvrez' : 'prise au démarrage');
+      return;
+    }
     if (!depuisCurseur) {
       reglage.curseurs[cle].value = rPos(valeur, R_ECHELLES[cle]);
     }
@@ -442,6 +526,14 @@
   if (PANNEAU_REGLAGE) {
     reglageLireAdresse();
     reglage.boite.hidden = false;
+
+    document.querySelector('.presets[data-pour="def"]')
+      .addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (b) reglageChanger('def', parseFloat(b.dataset.v), false);
+      });
+
+    setInterval(() => { rIps = rCadres; rCadres = 0; reglageMajFlux(); }, 1000);
 
     for (const cle of ['beta', 'mincf']) {
       reglage.curseurs[cle].value = rPos(reglage.valeurs[cle], R_ECHELLES[cle]);
@@ -485,6 +577,7 @@
 
     reglageAfficher();
     reglageMajEtat('');
+    reglageMajFlux();
   }
   /* ================= FIN REGLAGE ================= */
 
@@ -500,6 +593,8 @@
       if (PANNEAU_REGLAGE) {                   // REGLAGE
         setTimeout(() => {
           const n = reglageAppliquer();
+          reglageBrancherCompteur();
+          reglageMajFlux();
           reglageMajEtat(n > 0 ? n + ' filtre(s) suivi(s)' : 'valeurs prises au démarrage');
         }, 800);
       }
