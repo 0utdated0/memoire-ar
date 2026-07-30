@@ -295,7 +295,7 @@
 
     <div class="curseur">
       <div class="curseur-tete"><span>zone morte</span><b id="val-zm">1</b></div>
-      <p class="curseur-note">En degrés. Tant que la pose bouge moins que ça, la maquette n'est pas actualisée du tout : elle est vraiment immobile, au lieu de frémir. Au-delà, elle repart. C'est le réglage qui agit le plus sur l'impression de stabilité.</p>
+      <p class="curseur-note">En degrés. En dessous de ce seuil, le déplacement est atténué progressivement, d'autant plus qu'il est petit. Le frémissement disparaît, un vrai mouvement passe intact, et rien ne saccade. 0 désactive.</p>
       <div class="presets" data-pour="zm">
         <button type="button" data-v="0">0</button>
         <button type="button" data-v="0.5">0.5</button>
@@ -643,24 +643,31 @@
     }
     lissage.pPrec.copy(np); lissage.qPrec.copy(nq);
 
-    // Zone morte à double seuil : on ne repart que si l'écart dépasse
-    // franchement le seuil, et on se refige nettement en dessous, pour
-    // éviter de basculer sans arrêt à la frontière.
+    // Zone morte PROGRESSIVE. Une zone morte en tout ou rien fige la
+    // maquette puis la relâche d'un bloc : ça saccade. Ici, plus l'écart
+    // est petit devant le seuil, plus le déplacement est atténué, de
+    // façon continue. Le frémissement est écrasé au carré, un vrai
+    // mouvement passe intact, et il n'y a aucune discontinuité.
     const ecartA = lissage.qAff.angleTo(nq) * 180 / Math.PI;
     const ecartP = lissage.pAff.distanceTo(np);
-    // Le seuil de position doit valoir le meme angle vu depuis la camera,
-    // sinon il n'a aucun sens : les unites de pose ne sont pas des metres.
+    // Le seuil de position vaut le même angle vu depuis la caméra : les
+    // unités de pose ne sont pas des millimètres.
     const seuilP = Math.max(1e-6, np.length()) * Math.tan(ZONE_MORTE * Math.PI / 180);
-    if (ZONE_MORTE <= 0) {
-      lissage.enMouvement = true;
-    } else if (lissage.enMouvement) {
-      if (ecartA < ZONE_MORTE * 0.35 && ecartP < seuilP * 0.35) lissage.enMouvement = false;
-    } else if (ecartA > ZONE_MORTE || ecartP > seuilP) {
-      lissage.enMouvement = true;
+    let gainA = 1, gainP = 1;
+    if (ZONE_MORTE > 0) {
+      const rA = Math.min(1, ecartA / ZONE_MORTE);
+      const rP = Math.min(1, ecartP / seuilP);
+      gainA = rA * rA;
+      gainP = rP * rP;
     }
-    if (lissage.enMouvement) { lissage.pAff.copy(np); lissage.qAff.copy(nq); }
-    else { lissage._fige++; if (lissage.diag) lissage.diag.fige++; }
-    if (lissage.diag) lissage.diag.ecartAff += ecartA;
+    lissage.qAff.slerp(nq, gainA);
+    lissage.pAff.lerp(np, gainP);
+    if (gainA < 0.25 && gainP < 0.25) { lissage._fige++; if (lissage.diag) lissage.diag.fige++; }
+    if (lissage.diag) {
+      lissage.diag.ecartAff += ecartA;
+      const saut = ecartA * gainA;
+      if (saut > (lissage.diag.maxSaut || 0)) lissage.diag.maxSaut = saut;
+    }
 
     lissage.dernier = new T.Matrix4().compose(lissage.pAff, lissage.qAff, e).toArray();
     return lissage.dernier;
@@ -738,7 +745,7 @@
 
   const PANNEAU_REGLAGE = true;
 
-  const R_DEFAUTS = { beta: 1, mincf: 0.001, def: 1280, scale: 0.25, miss: 5, zm: 1, pos: 0.2 };
+  const R_DEFAUTS = { beta: 1, mincf: 0.001, def: 1280, scale: 0.25, miss: 5, zm: 1, pos: 0.5 };
   const R_ETIQ_DEF = { 640: '480p', 1280: '720p', 1920: '1080p' };
   // Échelles logarithmiques : les deux paramètres se lisent en ordres
   // de grandeur, pas en pas réguliers.
@@ -952,7 +959,7 @@
       const compteVue = () => vues++;
       cible.addEventListener('targetFound', compteVue);
       lissage.diag = { n: 0, sBrut: 0, sLisse: 0, maxBrut: 0, fige: 0, ecartAff: 0, te: [],
-                       sPos: 0, maxPos: 0, dist: 0 };
+                       sPos: 0, maxPos: 0, dist: 0, maxSaut: 0 };
       const t0 = performance.now();
       reglageMajEtat('relevé en cours, ne bougez pas');
       setTimeout(() => {
@@ -979,7 +986,8 @@
           'soit ' + (moy(D.dist) ? (100 * moy(D.sPos) / moy(D.dist)).toFixed(3) : '?') + ' % de la distance par image',
           'apres lissage moy ' + moy(D.sLisse).toFixed(2) + ' deg',
           'ecart a l affiche moy ' + moy(D.ecartAff).toFixed(2) + ' deg',
-          'zone morte active ' + (D.n ? Math.round(100 * D.fige / D.n) : 0) + ' % du temps (seuil ' + ZONE_MORTE + ')',
+          'attenuation forte ' + (D.n ? Math.round(100 * D.fige / D.n) : 0) + ' % du temps (seuil ' + ZONE_MORTE + ')',
+          'plus grand saut affiche ' + (D.maxSaut || 0).toFixed(2) + ' deg',
           'reacquisitions ' + vues + ', poses NaN ' + lissage.rejets,
           'reglages beta ' + rFmt(reglage.valeurs.beta) + ' mincf ' + rFmt(reglage.valeurs.mincf) +
             ' miss ' + reglage.valeurs.miss + ' scale ' + rFmt(reglage.valeurs.scale) +
