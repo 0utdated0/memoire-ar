@@ -162,7 +162,7 @@
   }
   #reglage-ligne{
     display:none;margin-top:9px;padding:8px;background:#0d0f11;
-    font-size:10px;color:#c9ced3;word-break:break-all;
+    font-size:10px;color:#c9ced3;white-space:pre-line;
     user-select:all;-webkit-user-select:all;line-height:1.5;
   }
   #reglage-ligne.visible{display:block}
@@ -317,6 +317,7 @@
 
     <div id="reglage-pied">
       <span id="reglage-etat">en attente</span>
+      <button type="button" id="reglage-diag">relevé 5 s</button>
       <button type="button" id="reglage-copier">copier</button>
       <button type="button" id="reglage-reset">défaut</button>
     </div>
@@ -415,6 +416,7 @@
     tampon: [], pAff: null, qAff: null, enMouvement: true, fige: 0,
     brut: 0, lisse: 0, rejets: 0,
     _aBrut: 0, _aLisse: 0, _n: 0, _fige: 0,
+    diag: null,
   };
 
   function lissageReset() {
@@ -472,7 +474,8 @@
     const ad = coef(te, 0.001);
 
     // Mesure du bruit brut, en degrés d'une image à l'autre.
-    lissage._aBrut += lissage.qBrutPrec.angleTo(qBrut) * 180 / Math.PI;
+    lissage._dBrutCourant = lissage.qBrutPrec.angleTo(qBrut) * 180 / Math.PI;
+    lissage._aBrut += lissage._dBrutCourant;
     lissage.qBrutPrec.copy(qBrut);
 
     const np = new T.Vector3();
@@ -490,8 +493,16 @@
     const aq = Math.min(1, coef(te, LISSAGE_MINCF + LISSAGE_BETA * lissage.vAng));
     const nq = lissage.qPrec.clone().slerp(q, aq);
 
-    lissage._aLisse += lissage.qPrec.angleTo(nq) * 180 / Math.PI;
+    const dLisse = lissage.qPrec.angleTo(nq) * 180 / Math.PI;
+    lissage._aLisse += dLisse;
     lissage._n++;
+    const D = lissage.diag;
+    if (D) {
+      D.n++; D.brut += lissage.qBrutPrec ? 0 : 0;
+      D.sBrut += lissage._dBrutCourant; D.sLisse += dLisse;
+      D.te.push(te);
+      if (lissage._dBrutCourant > D.maxBrut) D.maxBrut = lissage._dBrutCourant;
+    }
     lissage.pPrec.copy(np); lissage.qPrec.copy(nq);
 
     // Zone morte à double seuil : on ne repart que si l'écart dépasse
@@ -508,7 +519,8 @@
       lissage.enMouvement = true;
     }
     if (lissage.enMouvement) { lissage.pAff.copy(np); lissage.qAff.copy(nq); }
-    else lissage._fige++;
+    else { lissage._fige++; if (lissage.diag) lissage.diag.fige++; }
+    if (lissage.diag) lissage.diag.ecartAff += ecartA;
 
     lissage.dernier = new T.Matrix4().compose(lissage.pAff, lissage.qAff, e).toArray();
     return lissage.dernier;
@@ -780,6 +792,47 @@
     document.getElementById('reglage-reset').addEventListener('click', () => {
       reglageChanger('beta',  R_DEFAUTS.beta,  false);
       reglageChanger('mincf', R_DEFAUTS.mincf, false);
+    });
+
+    document.getElementById('reglage-diag').addEventListener('click', () => {
+      const sys = scene.systems && scene.systems['mindar-image-system'];
+      if (!sys || !sys.controller) { reglageMajEtat('ouvrez la caméra d\'abord'); return; }
+      lissage.rejets = 0; rCadres = 0;
+      let vues = 0;
+      const compteVue = () => vues++;
+      cible.addEventListener('targetFound', compteVue);
+      lissage.diag = { n: 0, sBrut: 0, sLisse: 0, maxBrut: 0, fige: 0, ecartAff: 0, te: [] };
+      const t0 = performance.now();
+      reglageMajEtat('relevé en cours, ne bougez pas');
+      setTimeout(() => {
+        const D = lissage.diag; lissage.diag = null;
+        cible.removeEventListener('targetFound', compteVue);
+        const duree = (performance.now() - t0) / 1000;
+        const v = sys.video;
+        const te = D.te.slice().sort((a, b) => a - b);
+        const med = te.length ? te[Math.floor(te.length / 2)] : 0;
+        const p90 = te.length ? te[Math.floor(te.length * 0.9)] : 0;
+        const moy = (x) => D.n ? x / D.n : 0;
+        const L = [
+          'RELEVE ' + duree.toFixed(1) + ' s',
+          'flux ' + (v ? v.videoWidth + 'x' + v.videoHeight : '?') + ' demande ' + DEFINITION_CAMERA,
+          'poses recues ' + D.n + ' soit ' + (D.n / duree).toFixed(1) + '/s',
+          'intervalle median ' + med.toFixed(0) + ' ms, 90e centile ' + p90.toFixed(0) + ' ms',
+          'secousse brute moy ' + moy(D.sBrut).toFixed(2) + ' deg, max ' + D.maxBrut.toFixed(2) + ' deg',
+          'apres lissage moy ' + moy(D.sLisse).toFixed(2) + ' deg',
+          'ecart a l affiche moy ' + moy(D.ecartAff).toFixed(2) + ' deg',
+          'zone morte active ' + (D.n ? Math.round(100 * D.fige / D.n) : 0) + ' % du temps (seuil ' + ZONE_MORTE + ')',
+          'reacquisitions ' + vues + ', poses NaN ' + lissage.rejets,
+          'reglages beta ' + rFmt(reglage.valeurs.beta) + ' mincf ' + rFmt(reglage.valeurs.mincf) +
+            ' miss ' + reglage.valeurs.miss + ' scale ' + rFmt(reglage.valeurs.scale),
+        ].join('\n');
+        reglage.ligneTexte.textContent = L;
+        reglage.ligneTexte.classList.add('visible');
+        navigator.clipboard.writeText(L).then(
+          () => reglageMajEtat('relevé copié'),
+          () => reglageMajEtat('relevé prêt, sélectionnez-le')
+        );
+      }, 5000);
     });
 
     document.getElementById('reglage-copier').addEventListener('click', async () => {
