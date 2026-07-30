@@ -283,6 +283,17 @@
     </div>
 
     <div class="curseur">
+      <div class="curseur-tete"><span>lissage de la position</span><b id="val-pos">0.2</b></div>
+      <p class="curseur-note">Facteur appliqué à la position seule. 1 = lissée comme la rotation. Plus bas = beaucoup plus lissée. C'est la position qui nage, pas la rotation.</p>
+      <div class="presets" data-pour="pos">
+        <button type="button" data-v="1">1</button>
+        <button type="button" data-v="0.5">0.5</button>
+        <button type="button" data-v="0.2">0.2</button>
+        <button type="button" data-v="0.05">0.05</button>
+      </div>
+    </div>
+
+    <div class="curseur">
       <div class="curseur-tete"><span>zone morte</span><b id="val-zm">1</b></div>
       <p class="curseur-note">En degrés. Tant que la pose bouge moins que ça, la maquette n'est pas actualisée du tout : elle est vraiment immobile, au lieu de frémir. Au-delà, elle repart. C'est le réglage qui agit le plus sur l'impression de stabilité.</p>
       <div class="presets" data-pour="zm">
@@ -361,7 +372,54 @@
 
   let DEFINITION_CAMERA = 1280;   // largeur idéale demandée
 
-  const camInfo = { demande: 0, obtenu: '', capacites: '', tentatives: '' };
+  const camInfo = { demande: 0, obtenu: '', capacites: '', tentatives: '', crochet: 'non' };
+
+  // Forcer la définition sur la piste déjà ouverte. Bien plus fiable que
+  // d'intercepter getUserMedia : sur plusieurs navigateurs le remplacement
+  // de navigator.mediaDevices.getUserMedia ne prend tout simplement pas.
+  async function camForcerDefinition() {
+    try {
+      const sys = scene && scene.systems && scene.systems['mindar-image-system'];
+      const v = sys && sys.video;
+      const flux = v && v.srcObject;
+      if (!flux || !flux.getVideoTracks) return 'pas de flux';
+      const piste = flux.getVideoTracks()[0];
+      if (!piste) return 'pas de piste';
+      const D = DEFINITION_CAMERA;
+      camInfo.demande = D;
+      const cap = piste.getCapabilities ? piste.getCapabilities() : null;
+      if (cap && cap.width && cap.height) {
+        camInfo.capacites = 'l ' + cap.width.min + '-' + cap.width.max +
+                            ' h ' + cap.height.min + '-' + cap.height.max;
+      } else camInfo.capacites = 'non declarees';
+      const avant = piste.getSettings ? piste.getSettings() : {};
+      if (Math.max(avant.width || 0, avant.height || 0) >= D * 0.9) {
+        camInfo.obtenu = avant.width + 'x' + avant.height + ' (deja bon)';
+        return camInfo.obtenu;
+      }
+      const portrait = (avant.height || 0) > (avant.width || 0);
+      const gd = D, pt = Math.round(D * 3 / 4);
+      const essais = [
+        { width: { ideal: portrait ? pt : gd }, height: { ideal: portrait ? gd : pt } },
+        { width: { ideal: D }, height: { ideal: D } },
+        { width: { min: portrait ? pt : gd } },
+        { height: { min: portrait ? gd : pt } },
+      ];
+      const journal = [];
+      for (const c of essais) {
+        try {
+          await piste.applyConstraints(c);
+          const r = piste.getSettings();
+          journal.push(r.width + 'x' + r.height);
+          if (Math.max(r.width || 0, r.height || 0) >= D * 0.9) break;
+        } catch (e) { journal.push('refus'); }
+      }
+      camInfo.tentatives = journal.join(' > ');
+      const fin = piste.getSettings ? piste.getSettings() : {};
+      camInfo.obtenu = (fin.width || '?') + 'x' + (fin.height || '?');
+      return camInfo.obtenu;
+    } catch (e) { return 'erreur ' + e.message; }
+  }
 
   (function contraindreCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
@@ -380,6 +438,7 @@
           advanced: [{ focusMode: 'continuous' }]
         })});
       }
+      camInfo.crochet = 'oui';
       const flux = await origine(c);
       try {
         const piste = flux.getVideoTracks()[0];
@@ -406,6 +465,11 @@
       } catch (e) { camInfo.obtenu = 'inconnu'; }
       return flux;
     };
+    try {
+      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+        value: navigator.mediaDevices.getUserMedia, writable: true, configurable: true
+      });
+    } catch (e) {}
   })();
 
 
@@ -439,6 +503,9 @@
   // Zone morte, en degrés. En deçà, la pose affichée n'est pas
   // actualisée du tout : immobilité vraie, et non résiduelle.
   let ZONE_MORTE = 1;
+  // La position est la voie bruyante : elle se lisse bien plus fort que
+  // la rotation. Facteur appliqué aux deux constantes, pour la position seule.
+  let LISSAGE_POS = 0.2;
 
   const lissage = {
     installe: false, actif: false, tPrec: 0,
@@ -518,7 +585,7 @@
       const ax = axes[i];
       const d = (p[ax] - lissage.pPrec[ax]) / te;
       lissage.dPos[i] = ad * d + (1 - ad) * lissage.dPos[i];
-      const a = coef(te, LISSAGE_MINCF + LISSAGE_BETA * Math.abs(lissage.dPos[i]));
+      const a = coef(te, LISSAGE_MINCF * LISSAGE_POS + LISSAGE_BETA * LISSAGE_POS * Math.abs(lissage.dPos[i]));
       np[ax] = a * p[ax] + (1 - a) * lissage.pPrec[ax];
     }
 
@@ -546,7 +613,9 @@
     // éviter de basculer sans arrêt à la frontière.
     const ecartA = lissage.qAff.angleTo(nq) * 180 / Math.PI;
     const ecartP = lissage.pAff.distanceTo(np);
-    const seuilP = ZONE_MORTE * 0.008;
+    // Le seuil de position doit valoir le meme angle vu depuis la camera,
+    // sinon il n'a aucun sens : les unites de pose ne sont pas des metres.
+    const seuilP = Math.max(1e-6, np.length()) * Math.tan(ZONE_MORTE * Math.PI / 180);
     if (ZONE_MORTE <= 0) {
       lissage.enMouvement = true;
     } else if (lissage.enMouvement) {
@@ -634,7 +703,7 @@
 
   const PANNEAU_REGLAGE = true;
 
-  const R_DEFAUTS = { beta: 1, mincf: 0.001, def: 1280, scale: 0.25, miss: 5, zm: 1 };
+  const R_DEFAUTS = { beta: 1, mincf: 0.001, def: 1280, scale: 0.25, miss: 5, zm: 1, pos: 0.2 };
   const R_ETIQ_DEF = { 640: '480p', 1280: '720p', 1920: '1080p' };
   // Échelles logarithmiques : les deux paramètres se lisent en ordres
   // de grandeur, pas en pas réguliers.
@@ -656,7 +725,8 @@
                 def:  document.getElementById('val-def'),
                 scale: document.getElementById('val-scale'),
                 miss: document.getElementById('val-miss'),
-                zm:   document.getElementById('val-zm') },
+                zm:   document.getElementById('val-zm'),
+                pos:  document.getElementById('val-pos') },
     ligneEtat: document.getElementById('reglage-etat'),
     ligneFlux: document.getElementById('reglage-flux'),
     ligneTexte: document.getElementById('reglage-ligne'),
@@ -695,7 +765,7 @@
   // Lit le réglage dans l'adresse de la page, s'il y est.
   function reglageLireAdresse() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-    for (const cle of ['beta', 'mincf', 'def', 'scale', 'miss', 'zm']) {
+    for (const cle of ['beta', 'mincf', 'def', 'scale', 'miss', 'zm', 'pos']) {
       const v = parseFloat(p.get(cle));
       if (isFinite(v) && (v > 0 || cle === 'zm')) reglage.valeurs[cle] = v;
     }
@@ -710,6 +780,7 @@
     p.set('scale', rFmt(reglage.valeurs.scale));
     p.set('miss', String(reglage.valeurs.miss));
     p.set('zm', rFmt(reglage.valeurs.zm));
+    p.set('pos', rFmt(reglage.valeurs.pos));
     history.replaceState(null, '', location.pathname + '#' + p.toString());
   }
 
@@ -728,6 +799,7 @@
       LISSAGE_MINCF = reglage.valeurs.mincf;
       LISSAGE_BETA  = reglage.valeurs.beta;
       ZONE_MORTE    = reglage.valeurs.zm;
+      LISSAGE_POS   = reglage.valeurs.pos;
       const maquette = document.getElementById('maquette');
       if (maquette) {
         const v = reglage.valeurs.scale;
@@ -754,7 +826,7 @@
   }
 
   function reglageAfficher() {
-    for (const cle of ['beta', 'mincf', 'def', 'scale', 'miss', 'zm']) {
+    for (const cle of ['beta', 'mincf', 'def', 'scale', 'miss', 'zm', 'pos']) {
       reglage.sorties[cle].textContent = (cle === 'def')
         ? (R_ETIQ_DEF[reglage.valeurs.def] || reglage.valeurs.def + ' px')
         : rFmt(reglage.valeurs[cle]);
@@ -798,7 +870,7 @@
     reglageLireAdresse();
     reglage.boite.hidden = false;
 
-    for (const cle of ['def', 'miss', 'zm']) {
+    for (const cle of ['def', 'miss', 'zm', 'pos']) {
       document.querySelector('.presets[data-pour="' + cle + '"]')
         .addEventListener('click', (e) => {
           const b = e.target.closest('button');
@@ -853,7 +925,8 @@
         const L = [
           'RELEVE ' + duree.toFixed(1) + ' s',
           'flux ' + (v ? v.videoWidth + 'x' + v.videoHeight : '?') + ' demande ' + camInfo.demande,
-          'camera peut ' + (camInfo.capacites || 'non declare') + ' | essais ' + camInfo.tentatives,
+          'camera peut ' + (camInfo.capacites || 'non declare') + ' | essais ' + (camInfo.tentatives || 'aucun'),
+          'crochet getUserMedia ' + camInfo.crochet + ' | obtenu ' + (camInfo.obtenu || '?'),
           'poses recues ' + D.n + ' soit ' + (D.n / duree).toFixed(1) + '/s',
           'intervalle median ' + med.toFixed(0) + ' ms, 90e centile ' + p90.toFixed(0) + ' ms',
           'rotation brute moy ' + moy(D.sBrut).toFixed(3) + ' deg, max ' + D.maxBrut.toFixed(2) + ' deg',
@@ -865,7 +938,8 @@
           'zone morte active ' + (D.n ? Math.round(100 * D.fige / D.n) : 0) + ' % du temps (seuil ' + ZONE_MORTE + ')',
           'reacquisitions ' + vues + ', poses NaN ' + lissage.rejets,
           'reglages beta ' + rFmt(reglage.valeurs.beta) + ' mincf ' + rFmt(reglage.valeurs.mincf) +
-            ' miss ' + reglage.valeurs.miss + ' scale ' + rFmt(reglage.valeurs.scale),
+            ' miss ' + reglage.valeurs.miss + ' scale ' + rFmt(reglage.valeurs.scale) +
+            ' pos ' + rFmt(reglage.valeurs.pos),
         ].join('\n');
         reglage.ligneTexte.textContent = L;
         reglage.ligneTexte.classList.add('visible');
@@ -913,6 +987,7 @@
         setTimeout(() => {
           const n = reglageAppliquer();
           reglageBrancherCompteur();
+          camForcerDefinition().then(() => reglageMajFlux());
           reglageMajFlux();
           reglageMajEtat(n > 0 ? n + ' filtre(s) suivi(s)' : 'valeurs prises au démarrage');
         }, 800);
