@@ -399,6 +399,10 @@
       const avance = [];
       if (cap.exposureMode && cap.exposureMode.indexOf('continuous') >= 0) avance.push({ exposureMode: 'continuous' });
       if (cap.whiteBalanceMode && cap.whiteBalanceMode.indexOf('continuous') >= 0) avance.push({ whiteBalanceMode: 'continuous' });
+      // La mise au point continue n'etait demandee que dans le crochet
+      // getUserMedia, qui ne s'execute pas sur tous les navigateurs. On la
+      // demande donc ici, sur la piste vivante.
+      if (cap.focusMode && cap.focusMode.indexOf('continuous') >= 0) avance.push({ focusMode: 'continuous' });
       if (VERROU_EXPO) {
         avance.length = 0;
         if (cap.exposureMode && cap.exposureMode.indexOf('manual') >= 0) avance.push({ exposureMode: 'manual' });
@@ -779,6 +783,36 @@
 
   // Compte les images réellement traitées par le suivi, pas celles
   // affichées : c'est ce chiffre qui dit si la définition coûte trop cher.
+  // Nettete du flux, mesuree sur la vraie image de la camera.
+  // C'est le seul chiffre qui dise si la mise au point est faite.
+  let netteteCanvas = null;
+  function mesurerNettete() {
+    try {
+      const sys = scene.systems['mindar-image-system'];
+      const v = sys && sys.video;
+      if (!v || !v.videoWidth) return 0;
+      if (!netteteCanvas) {
+        netteteCanvas = document.createElement('canvas');
+        netteteCanvas.width = 160; netteteCanvas.height = 160;
+      }
+      const ctx = netteteCanvas.getContext('2d', { willReadFrequently: true });
+      // on echantillonne le centre du cadre, la ou se trouve la vignette
+      const c = Math.min(v.videoWidth, v.videoHeight);
+      ctx.drawImage(v, (v.videoWidth - c) / 2, (v.videoHeight - c) / 2, c, c, 0, 0, 160, 160);
+      const d = ctx.getImageData(0, 0, 160, 160).data;
+      const g = new Float32Array(160 * 160);
+      for (let i = 0; i < 160 * 160; i++) g[i] = (d[i*4] * 0.299 + d[i*4+1] * 0.587 + d[i*4+2] * 0.114);
+      // variance du laplacien
+      let s1 = 0, s2 = 0, n = 0;
+      for (let y = 1; y < 159; y++) for (let x = 1; x < 159; x++) {
+        const i = y * 160 + x;
+        const l = 4*g[i] - g[i-1] - g[i+1] - g[i-160] - g[i+160];
+        s1 += l; s2 += l * l; n++;
+      }
+      return n ? (s2 / n - (s1 / n) * (s1 / n)) : 0;
+    } catch (e) { return 0; }
+  }
+
   function reglageBrancherCompteur() {
     try {
       const ctrl = scene.systems['mindar-image-system'].controller;
@@ -960,10 +994,15 @@
       cible.addEventListener('targetFound', compteVue);
       lissage.diag = { n: 0, sBrut: 0, sLisse: 0, maxBrut: 0, fige: 0, ecartAff: 0, te: [],
                        sPos: 0, maxPos: 0, dist: 0, maxSaut: 0 };
+      const nettetes = [];
+      const chrono = setInterval(() => nettetes.push(mesurerNettete()), 250);
       const t0 = performance.now();
       reglageMajEtat('relevé en cours, ne bougez pas');
       setTimeout(() => {
+        clearInterval(chrono);
         const D = lissage.diag; lissage.diag = null;
+        nettetes.sort((a, b) => a - b);
+        const netMed = nettetes.length ? nettetes[Math.floor(nettetes.length / 2)] : 0;
         cible.removeEventListener('targetFound', compteVue);
         const duree = (performance.now() - t0) / 1000;
         const v = sys.video;
@@ -978,6 +1017,8 @@
           'crochet getUserMedia ' + camInfo.crochet + ' | obtenu ' + (camInfo.obtenu || '?'),
           'modes camera ' + (camInfo.reglagesDispo || 'inconnus'),
           'exposition ' + camInfo.verrou,
+          'nettete ' + netMed.toFixed(0) + (netMed < 120 ? '  FLOU, refaire la mise au point'
+                     : netMed < 300 ? '  moyen' : '  net'),
           'poses recues ' + D.n + ' soit ' + (D.n / duree).toFixed(1) + '/s',
           'intervalle median ' + med.toFixed(0) + ' ms, 90e centile ' + p90.toFixed(0) + ' ms',
           'rotation brute moy ' + moy(D.sBrut).toFixed(3) + ' deg, max ' + D.maxBrut.toFixed(2) + ' deg',
