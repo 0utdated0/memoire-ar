@@ -318,6 +318,64 @@ function holo(hote, graine){
     inst.ph   = k * 1.7;
   });
 
+  /* ---------------------------------------------------------
+     Terrain. Il file jusqu'à quatorze unités, soit près de six cents
+     mètres, et son opacité décroît en exponentielle : il ne s'arrête
+     jamais franchement, il s'efface. Les traits sont découpés en
+     tronçons pour que l'atténuation suive la distance le long de
+     chaque ligne, et non seulement à ses extrémités.
+     --------------------------------------------------------- */
+  const YSOL = SOL - .02, RMAX = 14, PAS_T = .55;
+  const opaciteSol = (r) => .22 * Math.exp(-r / 3.6);
+  for(let i = -Math.round(RMAX/PAS_T); i <= Math.round(RMAX/PAS_T); i++){
+    const t = i * PAS_T;
+    for(let j = -Math.round(RMAX/PAS_T); j < Math.round(RMAX/PAS_T); j++){
+      const u0 = j * PAS_T, u1 = u0 + PAS_T;
+      const rm = Math.hypot(t, (u0+u1)/2);
+      if(rm > RMAX) continue;
+      const al = opaciteSol(rm);
+      if(al < .004) continue;
+      statiques.push({ a:[t, YSOL, u0], b:[t, YSOL, u1], w:.9, al, fam:1 });
+      statiques.push({ a:[u0, YSOL, t], b:[u1, YSOL, t], w:.9, al, fam:1 });
+    }
+  }
+
+  /* Des arbres, dans le même trait. Un fût, trois couronnes coniques
+     décroissantes et quelques branches obliques. Ils s'effacent avec
+     la même loi que le sol. */
+  let grArbre = 917;
+  const aleaA = () => {
+    grArbre ^= grArbre << 13; grArbre >>>= 0;
+    grArbre ^= grArbre >> 17;
+    grArbre ^= grArbre << 5;  grArbre >>>= 0;
+    return grArbre / 4294967296;
+  };
+  for(let n = 0; n < 220; n++){
+    const th = aleaA() * Math.PI * 2;
+    const r  = 1.9 + Math.pow(aleaA(), .55) * (RMAX - 2.2);
+    const cx = Math.cos(th) * r, cz = Math.sin(th) * r;
+    const al = opaciteSol(r) * 1.9;
+    if(al < .006) continue;
+    const h = .16 + aleaA() * .20;
+    const e = .045 + aleaA() * .035;
+    // fût
+    statiques.push({ a:[cx, YSOL, cz], b:[cx, YSOL + h, cz], w:.9, al, fam:1 });
+    // trois couronnes
+    for(let c = 0; c < 3; c++){
+      const y = YSOL + h * (.42 + c * .21);
+      const rr = e * (1.9 - c * .5);
+      const N = 6, an = [];
+      for(let k = 0; k < N; k++){
+        const a2 = k / N * Math.PI * 2 + c * .5;
+        an.push([cx + Math.cos(a2) * rr, y, cz + Math.sin(a2) * rr]);
+      }
+      for(let k = 0; k < N; k++)
+        statiques.push({ a:an[k], b:an[(k+1)%N], w:.9, al: al*.72, fam:1 });
+      if(c === 2) for(let k = 0; k < N; k += 2)
+        statiques.push({ a:an[k], b:[cx, YSOL + h * 1.06, cz], w:.9, al: al*.6, fam:1 });
+    }
+  }
+
   // Gnomon
   for(const ax of axes) statiques.push({ a:P[ax.a], b:P[ax.b], w: .9, al:.70, fam:1 });
   for(const [a, b] of gradAxes) statiques.push({ a:P[a], b:P[b], w:.9, al:.66, fam:1 });
@@ -735,6 +793,43 @@ function holo(hote, graine){
       }
     }
 
+    /* Pointillés animés. Chaque tiret est un court segment dont la
+       position avance le long du tracé au fil du temps : ils défilent
+       réellement, ils ne clignotent pas sur place. */
+    const tirets = (A, B, nb, vit, al, decal) => {
+      const ph = ((temps * vit + decal) % 1 + 1) % 1;
+      for(let k = 0; k < nb; k++){
+        const t0 = (k + ph) / nb, t1 = t0 + .034;
+        if(t1 > 1) continue;
+        S.push({
+          a: [A[0]+(B[0]-A[0])*t0, A[1]+(B[1]-A[1])*t0, A[2]+(B[2]-A[2])*t0],
+          b: [A[0]+(B[0]-A[0])*t1, A[1]+(B[1]-A[1])*t1, A[2]+(B[2]-A[2])*t1],
+          w: .9, al, fam: 1 });
+      }
+    };
+
+    // Le long des trois axes du gnomon, vers l'extérieur
+    for(let k = 0; k < 3; k++){
+      const d = [[1,0,0],[0,1,0],[0,0,1]][k];
+      tirets([0, SOL - .30, 0],
+             [d[0]*3.4, SOL - .30 + d[1]*3.0, d[2]*3.4],
+             26, .00022 * (k + 1), .28, k * .33);
+    }
+    // Quatre fuseaux rasants qui filent vers l'horizon
+    for(let k = 0; k < 4; k++){
+      const a2 = k / 4 * Math.PI * 2 + .4;
+      tirets([Math.cos(a2)*1.7, SOL - .015, Math.sin(a2)*1.7],
+             [Math.cos(a2)*11,  SOL - .015, Math.sin(a2)*11],
+             34, .00013 * (k % 2 ? 1 : -1) * (1 + k * .3), .20, k * .25);
+    }
+    // Deux montants le long de la tour
+    for(let k = 0; k < 2; k++){
+      const a2 = k * Math.PI + .9;
+      tirets([Math.cos(a2)*1.15, SOL,        Math.sin(a2)*1.15],
+             [Math.cos(a2)*1.15, SOL + 3.05, Math.sin(a2)*1.15],
+             22, .00030 * (k ? -1 : 1), .26, k * .5);
+    }
+
     // Cercles d'instrument, chacun sur son axe et à sa vitesse
     for(const inst of instruments){
       const a2 = temps * inst.vit + inst.ph;
@@ -797,7 +892,9 @@ function holo(hote, graine){
         const u = i/(n-1);
         const onde = Math.pow(Math.max(0, Math.sin(u*4.2 - temps*.0011 + k*2.1)), 3);
         S.push({ a: fil[i], b: fil[i+1],
-                 w: .9, al: .34 + 1.9*onde, fam: 0 });   // arêtes du bâtiment : blanches
+                 w: .9, al: .16 + .62*onde, fam: 0 });
+        // L'onde ne dépassait plus 1 en opacité : elle saturait et le
+        // trait paraissait deux fois plus épais qu'il ne l'est.
       }
     }
 
@@ -810,7 +907,7 @@ function holo(hote, graine){
       if(!on) continue;
       const g = .35 + .65*c, e = .022;
       S.push({ a:[p[0]-e, p[1], p[2]], b:[p[0]+e, p[1], p[2]],
-               w: .9, al: .30 + 1.25*g, fam: 0 });      // fenêtres allumées : blanches
+               w: .9, al: .22 + .58*g, fam: 0 });    // fenêtres allumées
     }
 
     // Feux de balisage au sommet, battement lent et régulier
@@ -819,7 +916,7 @@ function holo(hote, graine){
       const b = Math.pow(Math.max(0, Math.sin(temps*.0016 + i*2.1)), 6);
       if(b < .02) continue;
       S.push({ a:[p[0]-.012, p[1], p[2]], b:[p[0]+.012, p[1], p[2]],
-               w: .9, al: .4 + 2.6*b, fam: 0 });        // feux de balisage : blancs
+               w: .9, al: .25 + .70*b, fam: 0 });    // feux de balisage
     }
 
     // Câbles, en pointillés qui défilent
