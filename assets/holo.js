@@ -399,11 +399,8 @@ function holo(hote, graine){
            : aStyle.z < 1.5 ? vec3(0.12, 0.37, 0.66)    // Bleu Blueprint
                             : vec3(0.22, 0.74, 0.85);   // Cyan léger
 
-      // La profondeur est désormais écrite dans le tampon : c'est
-      // elle qui décidera, pixel par pixel, de ce qui passe devant.
-      float zn = clamp(zz / 8.0, -0.99, 0.99);
       gl_Position = vec4(pos.x / uTaille.x * 2.0 - 1.0,
-                         1.0 - pos.y / uTaille.y * 2.0, zn, 1.0);
+                         1.0 - pos.y / uTaille.y * 2.0, 0.0, 1.0);
     }`;
 
   const FS_TRAIT = `
@@ -516,8 +513,36 @@ function holo(hote, graine){
       gl_FragColor = vec4(vec3(0.82, 0.85, 0.90) * a, a);
     }`;
 
+  /* ---------- Occulteur ----------
+     Un filaire n'a pas de surface : il n'y a rien derrière quoi
+     disparaître. On rend donc les FACES du modèle dans le seul
+     tampon de profondeur, sans écrire un pixel de couleur. Elles
+     sont invisibles mais elles masquent. */
+  const VS_OCC = `
+    precision highp float;
+    attribute vec3 aPos;
+    uniform vec2  uTaille;
+    uniform float uAngle, uTilt, uEch, uDecalY;
+    void main(){
+      float ca = cos(uAngle), sa = sin(uAngle);
+      float x  = aPos.x*ca - aPos.z*sa;
+      float z1 = aPos.x*sa + aPos.z*ca;
+      float cb = cos(uTilt), sb = sin(uTilt);
+      float y  = aPos.y*cb - z1*sb;
+      float zz = aPos.y*sb + z1*cb;
+      float f  = 9.0 / (9.0 + zz + 13.0);
+      vec2 p = vec2(uTaille.x*0.5 + x*f*uEch,
+                    uTaille.y*0.5 - y*f*uEch + uDecalY);
+      gl_Position = vec4(p.x / uTaille.x * 2.0 - 1.0,
+                         1.0 - p.y / uTaille.y * 2.0,
+                         clamp(zz / 8.0, -0.99, 0.99), 1.0);
+    }`;
+  const FS_OCC = `precision highp float;
+    void main(){ gl_FragColor = vec4(0.0); }`;
+
   const progTrait = lier(VS_TRAIT, FS_TRAIT);
   const progEtiq  = lier(VS_ETIQ, FS_ETIQ);
+  const progOcc   = lier(VS_OCC, FS_OCC);
   const progCA    = lier(VS_PLEIN, FS_CA);
 
   const A = {
@@ -615,6 +640,24 @@ function holo(hote, graine){
   for(const n of ['uTaille','uAngle','uTilt','uEch','uDecalY',
                   'uFocus','uDemi','uForce','uMaxCoC','uAtlas','uPix'])
     UE[n] = gl.getUniformLocation(progEtiq, n);
+
+  let bufOcc = null, nOcc = 0, AO = {}, UO = {};
+  if(typeof OCCULTEUR_01 !== 'undefined'){
+    const S3 = OCCULTEUR_01.s, T3 = OCCULTEUR_01.t;
+    const d = new Float32Array(T3.length * 3);
+    for(let i = 0; i < T3.length; i++){
+      d[i*3]   = S3[T3[i]*3];
+      d[i*3+1] = SOL + S3[T3[i]*3+1];
+      d[i*3+2] = S3[T3[i]*3+2];
+    }
+    bufOcc = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufOcc);
+    gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW);
+    nOcc = T3.length;
+    AO.aPos = gl.getAttribLocation(progOcc, 'aPos');
+    for(const n of ['uTaille','uAngle','uTilt','uEch','uDecalY'])
+      UO[n] = gl.getUniformLocation(progOcc, n);
+  }
 
   const bufPlein = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, bufPlein);
@@ -1023,12 +1066,69 @@ function holo(hote, graine){
     gl.clearColor(0, 0, 0, 0);
     gl.clearDepth(1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-    gl.depthMask(true);
+
+    /* Passe 1 : l'occulteur. Les faces du modèle remplissent le
+       tampon de profondeur sans écrire un seul pixel de couleur. */
+    if(bufOcc){
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LESS);
+      gl.depthMask(true);
+      gl.colorMask(false, false, false, false);
+      gl.disable(gl.BLEND);
+      gl.useProgram(progOcc);
+      gl.uniform2f(UO.uTaille, L, H);
+      gl.uniform1f(UO.uAngle, angle);
+      gl.uniform1f(UO.uTilt, tilt);
+      gl.uniform1f(UO.uEch, ECH());
+      gl.uniform1f(UO.uDecalY, H*.03);
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufOcc);
+      gl.enableVertexAttribArray(AO.aPos);
+      gl.vertexAttribPointer(AO.aPos, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, nOcc);
+      gl.colorMask(true, true, true, true);
+    }
+
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);          // additif, comme des lumières
 
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(false);
+    /* Passe 2 : les étiquettes, testées contre l'occulteur.
+       Elles sont toujours dessinées ; le GPU rejette, pixel par
+       pixel, celles que le volume recouvre. ---- Les étiquettes, DANS la scène ----
+       Même tampon de profondeur que le bâtiment : le GPU décide seul,
+       pixel par pixel, de ce qui passe devant. Elles sont toujours
+       dessinées ; ce sont les traits du bâtiment situés devant elles
+       qui les recouvrent. Elles écrivent aussi leur profondeur, donc
+       elles se masquent correctement entre elles. */
+    gl.useProgram(progEtiq);
+    gl.uniform2f(UE.uTaille, L, H);
+    gl.uniform1f(UE.uAngle, angle);
+    gl.uniform1f(UE.uTilt, tilt);
+    gl.uniform1f(UE.uEch, ECH());
+    gl.uniform1f(UE.uDecalY, H*.03);
+    gl.uniform1f(UE.uFocus, Math.sin(tilt) * (SOL + .95));
+    gl.uniform1f(UE.uDemi,   1.15);
+    gl.uniform1f(UE.uForce,  5.5);
+    gl.uniform1f(UE.uMaxCoC, 14.0);
+    gl.uniform2f(UE.uPix, 1/atl.width, 1/atl.height);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texAtlas);
+    gl.uniform1i(UE.uAtlas, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufEtiq);
+    for(const [loc, taille, dec] of [[AE.aAncre,3,0],[AE.aDec,2,3],[AE.aUV,2,5]]){
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, taille, gl.FLOAT, false, FE*4, dec*4);
+    }
+    gl.drawArrays(gl.TRIANGLES, 0, nEtiq);
+
+    /* Passe 3 : le bâtiment, SANS aucun test de profondeur. Les
+       milliers de traits doivent s'additionner librement ; leur faire
+       écrire la profondeur les faisait se masquer entre eux et
+       détruisait toute la matière du rendu. */
+    gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
     gl.useProgram(progTrait);
     gl.uniform2f(U.uTaille, L, H);
     gl.uniform1f(U.uAngle, angle);
@@ -1060,32 +1160,6 @@ function holo(hote, graine){
     nDyn = dyn.length * 6;
     tracer(bufDyn, nDyn);
 
-    /* ---- Les étiquettes, DANS la scène ----
-       Même tampon de profondeur que le bâtiment : le GPU décide seul,
-       pixel par pixel, de ce qui passe devant. Elles sont toujours
-       dessinées ; ce sont les traits du bâtiment situés devant elles
-       qui les recouvrent. Elles écrivent aussi leur profondeur, donc
-       elles se masquent correctement entre elles. */
-    gl.useProgram(progEtiq);
-    gl.uniform2f(UE.uTaille, L, H);
-    gl.uniform1f(UE.uAngle, angle);
-    gl.uniform1f(UE.uTilt, tilt);
-    gl.uniform1f(UE.uEch, ECH());
-    gl.uniform1f(UE.uDecalY, H*.03);
-    gl.uniform1f(UE.uFocus, Math.sin(tilt) * (SOL + .95));
-    gl.uniform1f(UE.uDemi,   1.15);
-    gl.uniform1f(UE.uForce,  5.5);
-    gl.uniform1f(UE.uMaxCoC, 14.0);
-    gl.uniform2f(UE.uPix, 1/atl.width, 1/atl.height);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texAtlas);
-    gl.uniform1i(UE.uAtlas, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, bufEtiq);
-    for(const [loc, taille, dec] of [[AE.aAncre,3,0],[AE.aDec,2,3],[AE.aUV,2,5]]){
-      gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, taille, gl.FLOAT, false, FE*4, dec*4);
-    }
-    gl.drawArrays(gl.TRIANGLES, 0, nEtiq);
 
     // Aberration chromatique sur l'image entière
     gl.disable(gl.DEPTH_TEST);
