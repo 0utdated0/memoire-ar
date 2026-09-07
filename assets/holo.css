@@ -1,17 +1,19 @@
 /* ============================================================
-   Archive des futurs non construits.
-   Registre : relevé d'instrument. Presque rien n'est éclairé,
-   aucune couleur d'aplat, la seule couleur du site vient de
-   l'aberration chromatique du canvas.
+   Beyond Blueprint - Archive de futurs non construits
+   Palette et typographies conformes à la DA du mémoire.
+   Registre : relevé d'instrument, presque rien n'est éclairé.
    ============================================================ */
 
 :root{
-  --noir:#000000;
-  --nuit:#050506;
-  --trait:#16171A;
-  --faible:#4A4E56;   /* télémétrie décorative */
-  --lisible:#9AA0AA;  /* texte secondaire réellement lu */
-  --vif:#E8EAEE;      /* texte principal */
+  /* Palette du projet, sans écart */
+  --noir-doux:#07090d;
+  --beton-fonce:#0d1219;
+  --beton-clair:#1e2732;
+  --gris-archive:#4e5966;
+  --blanc-casse:#d2d8e0;
+  --bleu-blueprint:#1e5fa8;
+  --cyan:#38bcd8;
+
   --marge:clamp(16px,3.4vw,40px);
 }
 
@@ -19,48 +21,109 @@
 html{-webkit-text-size-adjust:100%}
 
 body{
-  background:var(--noir);
-  color:var(--vif);
-  font-family:"JetBrains Mono",ui-monospace,monospace;
-  font-size:12px;
-  line-height:1.65;
-  letter-spacing:.01em;
+  background:var(--noir-doux);
+  color:var(--blanc-casse);
+  font-family:"Inter",system-ui,sans-serif;
+  font-weight:300;
+  font-size:13px;
+  line-height:1.7;
   -webkit-font-smoothing:antialiased;
   min-height:100svh;
   overflow-x:hidden;
 }
 
-/* Grain, seule texture du fond */
-body::after{
-  content:"";
-  position:fixed;inset:0;z-index:8;
-  pointer-events:none;opacity:.055;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+/* Le mono est réservé aux cartouches, comme le veut la DA */
+.cartouche{
+  font-family:ui-monospace,"SFMono-Regular","JetBrains Mono",monospace;
+  font-size:9.5px;
+  letter-spacing:.06em;
+  line-height:2;
 }
 
-/* Équerres de cadre, aux quatre angles du viewport */
+/* Grille blueprint, discrète, et grain -------------------- */
+body::before{
+  content:"";
+  position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.5;
+  background-image:
+    linear-gradient(to right, rgba(30,95,168,.075) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(30,95,168,.075) 1px, transparent 1px);
+  background-size:52px 52px;
+}
+/* Grain argentique : la texture est plus grande que l'écran et se
+   déplace par sauts, image par image. C'est ce déplacement qui
+   fait le grain de pellicule plutôt qu'un bruit figé. */
+body::after{
+  content:"";
+  position:fixed;top:-60px;left:-60px;right:-60px;bottom:-60px;
+  z-index:8;pointer-events:none;opacity:.055;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.92' numOctaves='4'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation:pellicule .9s steps(1) infinite;
+  will-change:transform;
+}
+@keyframes pellicule{
+  0%  {transform:translate(0,0)}
+  12% {transform:translate(-14px,7px)}
+  25% {transform:translate(9px,-12px)}
+  37% {transform:translate(-6px,-9px)}
+  50% {transform:translate(12px,5px)}
+  62% {transform:translate(-11px,11px)}
+  75% {transform:translate(5px,-6px)}
+  87% {transform:translate(-9px,-3px)}
+  100%{transform:translate(0,0)}
+}
+
+/* Vignettage : les bords s'assombrissent, comme au bord du champ
+   d'un objectif. C'est aussi ce qui fait ressortir l'aberration. */
+.vignettage{
+  position:fixed;inset:0;z-index:7;pointer-events:none;
+  background:radial-gradient(118% 90% at 50% 46%,
+    transparent 34%, rgba(7,9,13,.42) 74%, rgba(7,9,13,.86) 100%);
+}
+
+/* Instabilité de projecteur : un très léger flottement d'ensemble */
+.scene{animation:flottement 7.5s ease-in-out infinite}
+@keyframes flottement{
+  0%,100%{transform:translate(0,0)}
+  30%    {transform:translate(.6px,-.4px)}
+  62%    {transform:translate(-.5px,.5px)}
+}
+
+/* Équerres de cadre ---------------------------------------- */
 .cadre{position:fixed;inset:0;z-index:6;pointer-events:none}
-.cadre i{position:absolute;width:18px;height:18px;border:1px solid #23252A}
+.cadre i{position:absolute;width:18px;height:18px;border:1px solid var(--beton-clair)}
 .cadre i:nth-child(1){top:10px;left:10px;border-right:0;border-bottom:0}
 .cadre i:nth-child(2){top:10px;right:10px;border-left:0;border-bottom:0}
 .cadre i:nth-child(3){bottom:10px;left:10px;border-right:0;border-top:0}
 .cadre i:nth-child(4){bottom:10px;right:10px;border-left:0;border-top:0}
 
 /* Scène ---------------------------------------------------- */
-.scene{position:fixed;inset:0;z-index:0}
+.scene{position:fixed;inset:0;z-index:2}
 .scene canvas{width:100%;height:100%;display:block}
 
-/* Télémétrie décorative des marges ------------------------- */
+/* Invite au pilotage, s'efface au premier glissé */
+.invite{
+  position:fixed;left:50%;bottom:calc(var(--marge) + 4px);
+  transform:translateX(-50%);
+  z-index:4;pointer-events:none;
+  font-family:ui-monospace,"SFMono-Regular",monospace;
+  font-size:9.5px;letter-spacing:.08em;
+  color:var(--gris-archive);
+  transition:opacity .6s ease;
+}
+.invite.parti{opacity:0}
+@media (max-width:760px){.invite{display:none}}
+
+/* Cartouches des marges ------------------------------------ */
 .releve{
   position:fixed;z-index:4;
-  font-size:9px;line-height:2.1;
-  color:var(--faible);
-  white-space:nowrap;
-  pointer-events:none;
-  user-select:none;
+  font-family:ui-monospace,"SFMono-Regular",monospace;
+  font-size:9.5px;line-height:2.1;letter-spacing:.06em;
+  color:var(--gris-archive);
+  white-space:nowrap;pointer-events:none;user-select:none;
 }
 .releve.g{top:26vh;left:var(--marge)}
 .releve.d{top:34vh;right:var(--marge);text-align:right}
+.releve em{font-style:normal;color:var(--bleu-blueprint)}
 @media (max-width:760px){.releve{display:none}}
 
 /* Contenu réel --------------------------------------------- */
@@ -74,57 +137,62 @@ body::after{
 .hud > *{pointer-events:auto}
 
 .entete{display:flex;justify-content:space-between;gap:18px;align-items:baseline}
-.entete .titre{color:var(--vif);letter-spacing:.02em}
-.entete .meta{color:var(--lisible);font-size:10px}
-.entete a{color:var(--lisible);text-decoration:none}
-.entete a:hover{color:var(--vif)}
-
-.pied{max-width:560px}
-.enonce{
-  color:var(--lisible);
-  font-size:11.5px;
-  line-height:1.75;
-  max-width:52ch;
-  margin-bottom:26px;
+.entete .titre{font-weight:200;font-size:15px;letter-spacing:.015em}
+.entete .meta,.entete a{
+  font-family:ui-monospace,"SFMono-Regular",monospace;
+  font-size:9.5px;letter-spacing:.06em;
+  color:var(--gris-archive);text-decoration:none;
 }
-.enonce b{color:var(--vif);font-weight:400}
+.entete a:hover{color:var(--blanc-casse)}
 
-/* Liste des projets, en lignes de relevé ------------------- */
-.projets{list-style:none;border-top:1px solid var(--trait)}
-.projets li{border-bottom:1px solid var(--trait)}
+.pied{max-width:580px}
+.enonce{
+  font-weight:300;font-size:13px;line-height:1.8;
+  color:var(--gris-archive);max-width:54ch;margin-bottom:26px;
+}
+.enonce b{color:var(--blanc-casse);font-weight:400}
+
+/* Liste des projets ---------------------------------------- */
+.projets{list-style:none;border-top:1px solid var(--beton-clair)}
+.projets li{border-bottom:1px solid var(--beton-clair)}
 .projets a{
-  display:grid;
-  grid-template-columns:2.4rem 1fr auto;
-  gap:16px;align-items:center;
-  padding:13px 2px;
-  color:var(--lisible);
-  text-decoration:none;
+  display:grid;grid-template-columns:2.4rem 1fr auto;
+  gap:16px;align-items:center;padding:14px 2px;
+  color:var(--blanc-casse);text-decoration:none;
   transition:color .25s ease,padding-left .35s cubic-bezier(.16,1,.3,1);
 }
-.projets a:hover,.projets a:focus-visible{color:var(--vif);padding-left:10px}
-.projets a:focus-visible{outline:1px solid var(--vif);outline-offset:3px}
-.projets .nom{font-size:13px}
-.projets .st{font-size:9.5px;color:var(--faible)}
-.projets a:hover .st{color:var(--lisible)}
+.projets a:hover,.projets a:focus-visible{padding-left:10px;color:var(--cyan)}
+.projets a:focus-visible{outline:1px solid var(--cyan);outline-offset:3px}
+.projets .rang,.projets .st{
+  font-family:ui-monospace,"SFMono-Regular",monospace;
+  font-size:9.5px;letter-spacing:.06em;color:var(--gris-archive);
+}
+.projets .nom{font-weight:300;font-size:15px}
 
-/* Boutons, filaires comme le reste -------------------------- */
+/* Boutons, filaires ---------------------------------------- */
 .action,.discret{
   display:block;width:100%;
-  font-family:inherit;font-size:12px;letter-spacing:.04em;
+  font-family:"Inter",system-ui,sans-serif;
+  font-weight:400;font-size:13px;letter-spacing:.02em;
   text-align:center;text-decoration:none;cursor:pointer;
   padding:16px;border-radius:1px;
-  background:rgba(0,0,0,.5);
+  background:rgba(7,9,13,.55);
   transition:background .3s ease,border-color .3s ease,color .3s ease;
 }
-.action{border:1px solid #3A3E46;color:var(--vif)}
-.action:hover,.action:focus-visible{background:var(--vif);color:#000;border-color:var(--vif)}
-.discret{border:1px solid var(--trait);color:var(--lisible);margin-top:10px}
-.discret:hover,.discret:focus-visible{border-color:#3A3E46;color:var(--vif)}
-.action:focus-visible,.discret:focus-visible{outline:1px solid var(--vif);outline-offset:2px}
+.action{border:1px solid var(--bleu-blueprint);color:var(--blanc-casse)}
+.action:hover,.action:focus-visible{background:var(--bleu-blueprint);color:#fff}
+.discret{border:1px solid var(--beton-clair);color:var(--gris-archive);margin-top:10px}
+.discret:hover,.discret:focus-visible{border-color:var(--gris-archive);color:var(--blanc-casse)}
+.action:focus-visible,.discret:focus-visible{outline:1px solid var(--cyan);outline-offset:2px}
 
-footer{margin-top:24px;font-size:9.5px;color:var(--faible);line-height:1.9}
+footer{
+  margin-top:24px;
+  font-family:ui-monospace,"SFMono-Regular",monospace;
+  font-size:9.5px;line-height:2;letter-spacing:.05em;
+  color:var(--gris-archive);
+}
 
-/* Ouverture, un seul mouvement ------------------------------ */
+/* Ouverture ------------------------------------------------- */
 .leve{opacity:0;animation:leve 1.4s ease forwards}
 .leve:nth-child(2){animation-delay:.15s}
 @keyframes leve{to{opacity:1}}
@@ -132,4 +200,5 @@ footer{margin-top:24px;font-size:9.5px;color:var(--faible);line-height:1.9}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
   .leve{opacity:1}
+  .scene{transform:none}
 }

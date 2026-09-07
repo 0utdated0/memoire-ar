@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#07090d">
 <title>01 / Cube de test</title>
 
 <!-- GABARIT À DUPLIQUER. Cherchez « À RENSEIGNER ». -->
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/holo.css">
 
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -42,7 +42,7 @@
   #quitter.visible{display:block}
   #retour{left:12px}
 
-  #repli{position:fixed;inset:0;z-index:25;background:#000;display:none}
+  #repli{position:fixed;inset:0;z-index:25;background:var(--noir-doux);display:none}
   #repli.visible{display:block}
   model-viewer{width:100%;height:100%;--poster-color:transparent}
 </style>
@@ -52,7 +52,9 @@
 <!-- ================= ACCUEIL ================= -->
 <section id="accueil">
   <div class="scene" id="scene" aria-hidden="true"></div>
+  <div class="vignettage" aria-hidden="true"></div>
   <div class="cadre" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  <div class="invite" id="invite" aria-hidden="true">GLISSER POUR TOURNER AUTOUR</div>
 
   <div class="releve g" aria-hidden="true">
     PRJ 01<br>REL 4.62.11<br>NIV 08 / 08<br>ÉTAT NON BÂTI
@@ -117,6 +119,8 @@
 <script>
   // Une graine différente par projet donne un volume différent.
   const filaire = holo(document.getElementById('scene'), 4021);
+  const inv = document.getElementById('invite');
+  addEventListener('pointerdown', () => inv && inv.classList.add('parti'), { once:true });
 
   const accueil = document.getElementById('accueil');
   const etat    = document.getElementById('etat');

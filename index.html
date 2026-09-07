@@ -3,21 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#000000">
-<title>Archive des futurs non construits</title>
+<meta name="theme-color" content="#07090d">
+<title>Beyond Blueprint - Archive de futurs non construits</title>
 <meta name="description" content="Modèles en réalité augmentée des projets d'architecture spéculative étudiés dans le mémoire.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./assets/holo.css">
 </head>
 <body>
 
 <div class="scene" id="scene" aria-hidden="true"></div>
-<div class="cadre" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+<div class="vignettage" aria-hidden="true"></div>
+  <div class="cadre" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  <div class="invite" id="invite" aria-hidden="true">GLISSER POUR TOURNER AUTOUR</div>
 
 <div class="releve g" aria-hidden="true">
-  REL 4.62.11<br>EMPRISE 1188.4<br>NIV 08 / 08<br>[ 0.412 ]<br>ÉTAT NON BÂTI
+  REL 4.62.11<br>EMPRISE 1188.4<br>NIV 08 / 08<br>[ 0.412 ]<br><em>ÉTAT NON BÂTI</em>
 </div>
 <div class="releve d" aria-hidden="true">
   AZ 0.7040<br>INCL 0.340<br>ÉCH 1:200<br>DÉRIVE +0.0011<br>[ 4881 ]
@@ -26,8 +28,8 @@
 <main class="hud">
 
   <div class="entete leve">
-    <span class="titre">Archive des futurs non construits</span>
-    <span class="meta">2026</span>
+    <span class="titre">Beyond Blueprint</span>
+    <span class="meta">ARCHIVE DE FUTURS NON CONSTRUITS</span>
   </div>
 
   <div class="pied leve">
@@ -40,7 +42,7 @@
     <ul class="projets">
       <li>
         <a href="./projets/projet-01.html">
-          <span>01</span>
+          <span class="rang">01</span>
           <span class="nom">Cube de test</span>
           <span class="st">PRÊT</span>
         </a>
@@ -48,7 +50,7 @@
       <!-- Décommentez au fur et à mesure.
       <li>
         <a href="./projets/projet-02.html">
-          <span>02</span>
+          <span class="rang">02</span>
           <span class="nom">Titre du deuxième projet</span>
           <span class="st">PRÊT</span>
         </a>
@@ -66,7 +68,12 @@
 </main>
 
 <script src="./assets/holo.js"></script>
-<script>holo(document.getElementById('scene'), 20260907);</script>
+<script>
+  holo(document.getElementById('scene'), 20260907);
+  // L'invite disparaît dès que la personne a compris
+  const inv = document.getElementById('invite');
+  addEventListener('pointerdown', () => inv && inv.classList.add('parti'), { once:true });
+</script>
 
 </body>
 </html>
