@@ -758,16 +758,27 @@ function holo(hote, graine){
       const a = proj(P[et.idx]);              // le point visé
       const qx = a[0] + et.dx, qy = a[1] + et.dy;
       const d = Math.min(2, Math.abs((a[2] - zMed) / 1.15));
-      const coc = Math.min(7, Math.pow(d, 1.55) * 4.4);
-      const al = .80 - .28 * d;
+      // Derrière le volume, l'étiquette recule au lieu de le traverser :
+      // elle ne s'éteint pas mais tombe à 12 % et se floute davantage.
+      // C'est le cartouche opaque qui la faisait auparavant ressortir
+      // par-dessus le bâtiment.
+      const devant = a[2] <= zMed;
+      et.f = (et.f === undefined) ? (devant ? 1 : 0)
+                                  : et.f + ((devant ? 1 : 0) - et.f) * Math.min(1, dt*.007);
+      const fond = .12 + .88 * et.f;
+      const coc = Math.min(9, Math.pow(d, 1.55) * 4.4 + (1 - et.f) * 3.2);
+      const al = (.80 - .28 * d) * fond;
       const w = t2.measureText(et.t).width;
 
-      // cartouche opaque d'abord, sinon rien ne se lit
+      // Cartouche : seulement quand l'étiquette est devant. Derrière,
+      // elle doit se fondre dans la profondeur, pas percer le volume.
       t2.globalCompositeOperation = 'source-over';
       t2.filter = 'none';
-      t2.globalAlpha = al * .70;
-      t2.fillStyle = 'rgba(3,8,15,1)';
-      t2.fillRect(qx - 4, qy - 9, w + 8, 13);
+      if(et.f > .05){
+        t2.globalAlpha = al * .70 * et.f;
+        t2.fillStyle = 'rgba(3,8,15,1)';
+        t2.fillRect(qx - 4, qy - 9, w + 8, 13);
+      }
 
       // les trois canaux, en additif
       t2.globalCompositeOperation = 'lighter';
@@ -824,10 +835,12 @@ function holo(hote, graine){
       const visible = q[2] <= zMed - .10;   // nettement dans la moitié avant
       an.vis = visible;
 
-      // Le relevé ne disparaît jamais : quand son point passe derrière
-      // le volume, il faiblit sans s'éteindre.
-      const cible = visible ? 1 : .42;
-      an.acq += (cible - an.acq) * Math.min(1, dt * .009);
+      // La cible tombe bien à ZÉRO quand le point passe derrière le
+      // volume. Elle valait 0,42, ce qui empêchait le garde-fou
+      // `an.acq < .012` de se déclencher : l'ancre restait affichée
+      // et seul son libellé changeait.
+      const cible = visible ? 1 : 0;
+      an.acq += (cible - an.acq) * Math.min(1, dt * (visible ? .009 : .016));
 
       const bat = .5 + .5*Math.sin(temps*.0035 + an.phase);
       const A0  = an.acq;
