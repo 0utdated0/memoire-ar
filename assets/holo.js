@@ -99,26 +99,30 @@ function holo(hote, graine){
 
   /* ---- Étiquettes flottantes : elles ne disparaissent jamais mais
          subissent le flou de profondeur, comme le bâtiment. ---- */
-  const etiquettes = [
-    { p:[ 1.55,  2.30, -0.30], t:'ORBON INTELLIGENCE' },
-    { p:[-1.70,  1.95,  0.55], t:'43.6100°N  3.8767°E' },
-    { p:[ 1.35,  1.20,  0.90], t:'H 128.00 m' },
-    { p:[-1.55,  0.95, -0.75], t:'SHON 24 800 m²' },
-    { p:[ 1.60,  0.35, -0.85], t:'NIV 34 / 34' },
-    { p:[-1.40,  2.55,  0.10], t:'ÉTAT · NON BÂTI' },
-    { p:[ 1.20,  2.70,  0.60], t:'REL 4.62.11' },
-    { p:[-1.65,  0.30,  0.95], t:'ÉCH 1:500' },
-    { p:[ 0.30,  3.10, -0.55], t:'ALT +128.00' },
-    { p:[-0.60,  0.10, -1.15], t:'EMPRISE 2 356 m²' }
-  ];
+  // Chaque étiquette VISE un sommet du modèle. Le décalage n'est
+  // qu'un écart à l'écran : le trait de rappel relie toujours le
+  // texte au point désigné.
+  const TEXTES = ['ORBON INTELLIGENCE', '43.6100°N 3.8767°E', 'H 128.00 m',
+                  'SHON 24 800 m²', 'NIV 34 / 34', 'ÉTAT · NON BÂTI',
+                  'REL 4.62.11', 'ÉCH 1:500', 'ALT +128.00', 'EMPRISE 2 356 m²'];
+  const etiquettes = TEXTES.map((t, k) => ({
+    idx: base + Math.floor((k + .28) / TEXTES.length * (P.length - base)),
+    dx: (k % 2 ? 1 : -1) * (74 + (k % 3) * 30),
+    dy: -34 + ((k * 37) % 90),
+    t
+  }));
 
   const feux = sommets.slice(0, 3).map(i => [P[i][0], P[i][1] + .05, P[i][2]]);
   const filsLumiere = neons;
 
   /* ---- Ancres accrochées à des points remarquables ---- */
-  const cands = [];
-  for(let i = base; i < P.length; i += 137) cands.push(i);
-  const REMARQUABLES = cands.slice(0, 6);
+  // Réparties sur TOUT le tableau de sommets. Prendre les six
+  // premiers d'un pas régulier les regroupait dans un même coin du
+  // maillage : elles se comportaient alors toutes pareil.
+  const NB_SOM = P.length - base;
+  const REMARQUABLES = [];
+  for(let k = 0; k < 6; k++)
+    REMARQUABLES.push(base + Math.floor((k + .5) / 6 * NB_SOM));
   for(let i = 0; i < REMARQUABLES.length; i++)
     ancres.push({ idx: REMARQUABLES[i], phase: alea()*6.28, n: i+1,
                   h: (P[REMARQUABLES[i]][1] - SOL) * 42 });
@@ -744,46 +748,53 @@ function holo(hote, graine){
 
     /* ---- Étiquettes : jamais masquées, mais floutées avec la
            distance, selon la même loi que le shader du bâtiment. ---- */
-    // Les étiquettes sont en Blanc cassé, les ancres en Cyan léger :
-    // deux familles, deux couleurs, deux rôles.
+    // Les étiquettes visent un point du modèle. Elles subissent le
+    // flou de profondeur ET l'aberration chromatique : trois passes
+    // rouge, verte et bleue dilatées depuis le centre de l'image,
+    // recomposées en additif, exactement comme le shader du bâtiment.
+    const CANAUX2D = [[1.0045,'255,0,0'], [1.0,'0,255,0'], [0.9955,'0,0,255']];
     t2.font = '10px ui-monospace, "SFMono-Regular", monospace';
     for(const et of etiquettes){
-      const q = proj(et.p);
-      const d = Math.min(2, Math.abs((q[2] - zMed) / 1.15));
+      const a = proj(P[et.idx]);              // le point visé
+      const qx = a[0] + et.dx, qy = a[1] + et.dy;
+      const d = Math.min(2, Math.abs((a[2] - zMed) / 1.15));
       const coc = Math.min(7, Math.pow(d, 1.55) * 4.4);
-      const al = .78 - .26 * d;
-      cartouche(q[0], q[1], et.t, al);
-      t2.fillStyle = `rgba(${BLANC},1)`;
-      if(coc <= .4){
-        t2.filter = 'none'; t2.globalAlpha = al;
-        t2.fillText(et.t, q[0], q[1]);
-      } else if(filtreOK){
-        t2.filter = `blur(${coc.toFixed(2)}px)`;
-        t2.globalAlpha = al;
-        t2.fillText(et.t, q[0], q[1]);
-      } else {
-        // Secours si le navigateur ignore ctx.filter : le texte est
-        // répété en couronne, l'énergie totale restant constante.
-        t2.filter = 'none';
-        const N = 8;
-        t2.globalAlpha = al * .30;
-        t2.fillText(et.t, q[0], q[1]);
-        t2.globalAlpha = al * .70 / N;
-        for(let k = 0; k < N; k++){
-          const th = k/N * Math.PI*2;
-          t2.fillText(et.t, q[0] + Math.cos(th)*coc, q[1] + Math.sin(th)*coc);
-        }
-      }
-      // petit trait de rappel, flouté lui aussi
-      // Repère en tête, propre aux étiquettes : il les distingue au
-      // premier coup d'œil des réticules d'ancre.
+      const al = .80 - .28 * d;
+      const w = t2.measureText(et.t).width;
+
+      // cartouche opaque d'abord, sinon rien ne se lit
+      t2.globalCompositeOperation = 'source-over';
       t2.filter = 'none';
-      t2.strokeStyle = `rgba(${BLANC},1)`;
-      t2.globalAlpha = al * .55;
-      t2.beginPath();
-      t2.moveTo(q[0] - 12, q[1] - 3);
-      t2.lineTo(q[0] - 5,  q[1] - 3);
-      t2.stroke();
+      t2.globalAlpha = al * .70;
+      t2.fillStyle = 'rgba(3,8,15,1)';
+      t2.fillRect(qx - 4, qy - 9, w + 8, 13);
+
+      // les trois canaux, en additif
+      t2.globalCompositeOperation = 'lighter';
+      for(const [k, col] of CANAUX2D){
+        const ax = L/2 + (qx - L/2)*k, ay = H/2 + (qy - H/2)*k;
+        const bx = L/2 + (a[0] - L/2)*k, by = H/2 + (a[1] - H/2)*k;
+        t2.fillStyle = `rgb(${col})`;
+        t2.strokeStyle = `rgb(${col})`;
+        if(coc > .4 && filtreOK) t2.filter = `blur(${coc.toFixed(2)}px)`;
+        else t2.filter = 'none';
+        t2.globalAlpha = al * .42;
+        t2.fillText(et.t, ax, ay);
+        // trait de rappel jusqu'au point visé, avec sa patte
+        t2.globalAlpha = al * .30;
+        t2.beginPath();
+        t2.moveTo(ax + (et.dx > 0 ? -4 : w + 4), ay - 3);
+        t2.lineTo(ax + (et.dx > 0 ? -14 : w + 14), ay - 3);
+        t2.lineTo(bx, by);
+        t2.stroke();
+        // petite croix sur le point visé
+        t2.globalAlpha = al * .38;
+        t2.beginPath();
+        t2.moveTo(bx - 4, by); t2.lineTo(bx + 4, by);
+        t2.moveTo(bx, by - 4); t2.lineTo(bx, by + 4);
+        t2.stroke();
+      }
+      t2.globalCompositeOperation = 'source-over';
     }
     t2.filter = 'none';
 
@@ -810,7 +821,7 @@ function holo(hote, graine){
     for(const an of ancres){
       const q = proj(P[an.idx]);
       an.ecran = q;
-      const visible = q[2] <= zMed + .06;   // dans la moitié avant
+      const visible = q[2] <= zMed - .10;   // nettement dans la moitié avant
       an.vis = visible;
 
       // Le relevé ne disparaît jamais : quand son point passe derrière
