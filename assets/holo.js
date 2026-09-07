@@ -920,15 +920,6 @@ function holo(hote, graine){
     return som / SONDES.length;
   };
 
-  // Cartouche sombre derrière le texte : sans lui, rien ne se lit
-  // par-dessus un filaire dense.
-  const cartouche = (x, y, txt, al) => {
-    const w = t2.measureText(txt).width;
-    t2.globalAlpha = al * .72;
-    t2.fillStyle = 'rgba(3,8,15,1)';
-    t2.fillRect(x - 3, y - 9, w + 6, 12);
-  };
-
   /* Carte de profondeur d'écran : le modèle est projeté une fois par
      image dans une grille grossière, en retenant la profondeur la plus
      proche par case. Elle sert à savoir si une étiquette est devant ou
@@ -1048,10 +1039,6 @@ function holo(hote, graine){
       t2.fillStyle = `rgba(${CYAN},1)`;
       const w = Math.max(t2.measureText(l1).width, t2.measureText(l2).width);
       const lx = cote > 0 ? x + s + 30 : x - s - 30 - w;
-      // cartouche puis texte, nets
-      t2.globalAlpha = A0 * .62;
-      t2.fillStyle = 'rgba(3,8,15,1)';
-      t2.fillRect(lx - 3, y - s - 31, w + 6, 24);
       t2.fillStyle = `rgba(${CYAN},1)`;
       t2.globalAlpha = A0 * (.72 + .22*bat);
       t2.fillText(l1, lx, y - s - 22);
