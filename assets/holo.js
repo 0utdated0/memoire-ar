@@ -694,18 +694,24 @@ function holo(hote, graine){
   let nDyn = 0;
 
   /* ---------- Atlas : tous les libellés cuits dans une texture ---------- */
+  // L'atlas est cuit à la densité réelle de l'écran. Rendu en pixels
+  // CSS puis affiché sur un canvas haute densité, le texte était
+  // agrandi deux à trois fois et paraissait flou sur mobile.
+  const DA = Math.min(devicePixelRatio || 1, 3);
   const LIGNE = 22, MARGE = 3;
   const atl = document.createElement('canvas');
   const ac  = atl.getContext('2d');
-  atl.width = 512; atl.height = LIGNE * etiquettes.length;
+  atl.width = Math.round(512 * DA);
+  atl.height = Math.round(LIGNE * etiquettes.length * DA);
+  ac.scale(DA, DA);
   ac.font = '13px ui-monospace, "SFMono-Regular", monospace';
   ac.textBaseline = 'top';
   ac.fillStyle = '#fff';
   etiquettes.forEach((et, i) => {
     et.w = Math.ceil(ac.measureText(et.t).width) + MARGE*2;
     et.h = LIGNE;
-    et.u0 = 0; et.v0 = i*LIGNE / atl.height;
-    et.u1 = et.w / atl.width; et.v1 = (i+1)*LIGNE / atl.height;
+    et.u0 = 0; et.v0 = i / etiquettes.length;
+    et.u1 = et.w / 512; et.v1 = (i+1) / etiquettes.length;
     ac.fillText(et.t, MARGE, i*LIGNE + 4);
   });
   const texAtlas = gl.createTexture();
@@ -772,7 +778,10 @@ function holo(hote, graine){
      ========================================================= */
   let L = 0, H = 0, DPR = 1;
   const redim = () => {
-    DPR = Math.min(devicePixelRatio || 1, 2);
+    // Sur un téléphone à densité 3, plafonner à 2 revient à rendre à
+    // deux tiers de la définition native : les traits fins s'y
+    // délavent. On ne dessine que des lignes, le coût reste tenable.
+    DPR = Math.min(devicePixelRatio || 1, L < 760 ? 3 : 2);
     L = hote.clientWidth || 1; H = hote.clientHeight || 1;
     for(const c of [cv, tx]){ c.width = L*DPR; c.height = H*DPR; }
     t2.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1313,9 +1322,10 @@ function holo(hote, graine){
     gl.uniform1f(UE.uEch, ECH());
     gl.uniform1f(UE.uDecalY, H*.03);
     gl.uniform1f(UE.uFocus, Math.sin(tilt) * (SOL + .95));
+    const EF2 = Math.min(L, H) / 820;
     gl.uniform1f(UE.uDemi,   1.15);
-    gl.uniform1f(UE.uForce,  5.5);
-    gl.uniform1f(UE.uMaxCoC, 14.0);
+    gl.uniform1f(UE.uForce,  5.5 * EF2);
+    gl.uniform1f(UE.uMaxCoC, 14.0 * EF2);
     gl.uniform2f(UE.uPix, 1/atl.width, 1/atl.height);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texAtlas);
@@ -1342,9 +1352,13 @@ function holo(hote, graine){
     // uForce : vitesse à laquelle le flou monte hors de cette zone.
     // uMaxCoC: rayon de flou maximal, en pixels.
     gl.uniform1f(U.uFocus, Math.sin(tilt) * (SOL + .95));  // centre du bâtiment
+    // Le flou s'exprimait en pixels absolus : 14 px, c'est 1 % d'un
+    // écran de bureau mais 3,6 % d'un téléphone. Il paraissait donc
+    // quatre fois plus fort sur mobile. On le met à l'échelle du cadre.
+    const ECH_FLOU = Math.min(L, H) / 820;
     gl.uniform1f(U.uDemi,   1.15);
-    gl.uniform1f(U.uForce,  5.5);
-    gl.uniform1f(U.uMaxCoC, 14.0);
+    gl.uniform1f(U.uForce,  5.5 * ECH_FLOU);
+    gl.uniform1f(U.uMaxCoC, 14.0 * ECH_FLOU);
 
     const tracer = (buf, n) => {
       if(!n) return;
