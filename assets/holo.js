@@ -306,15 +306,17 @@ function holo(hote, graine){
   const rayonSol = (a, b) =>
     Math.max(Math.hypot(P[a][0], P[a][2]), Math.hypot(P[b][0], P[b][2]));
 
+  // famille 0 : le bâtiment. 1 : l'appareillage de relevé. 2 : les
+  // éléments lumineux. Seul le bâtiment reste blanc.
   const statiques = [];
-  const pousse = (liste, w, al) => {
+  const pousse = (liste, w, al, fam) => {
     for(const [a, b] of liste)
-      statiques.push({ a:P[a], b:P[b], w, al });
+      statiques.push({ a:P[a], b:P[b], w, al, fam: fam || 0 });
   };
   for(const [a, b] of trame){
     const d = rayonSol(a, b);
-    statiques.push({ a:P[a], b:P[b], w:.9,
-                     al: .16 * Math.max(.18, 1 - d / (G * 1.05)) });
+    statiques.push({ a:P[a], b:P[b], w:.9, fam:1,
+                     al: .26 * Math.max(.18, 1 - d / (G * 1.05)) });
   }
   pousse(resille, .8,  .22);
   pousse(dalles,  1.1, .50);
@@ -329,7 +331,7 @@ function holo(hote, graine){
     for(let i = i0; i < i1; i++){
       if(inst.dash && (i % 4) > 1) continue;      // pointillé figé
       statiques.push({ a: inst.pts[i % n], b: inst.pts[(i+1) % n],
-                       w: .9, al: inst.al });
+                       w: .9, al: inst.al * 1.7, fam: 1 });
     }
     if(inst.ticks){
       const pas = Math.max(1, Math.floor(n / inst.ticks));
@@ -338,7 +340,7 @@ function holo(hote, graine){
         const g = ((i/pas) % 5 === 0) ? 1.075 : 1.032;
         statiques.push({ a: p,
           b: [CI[0] + (p[0]-CI[0])*g, CI[1] + (p[1]-CI[1])*g, CI[2] + (p[2]-CI[2])*g],
-          w: .8, al: inst.al * .85 });
+          w: .8, al: inst.al * 1.4, fam: 1 });
       }
     }
     if(inst.arc){
@@ -346,14 +348,14 @@ function holo(hote, graine){
         const p = inst.pts[i % n], g = 1.11;
         statiques.push({ a: p,
           b: [p[0]*g, (p[1]-CI[1])*g + CI[1], p[2]*g],
-          w: 1.3, al: inst.al * 1.5 });
+          w: 1.3, al: inst.al * 2.4, fam: 1 });
       }
     }
   }
 
   // Gnomon
-  for(const ax of axes) statiques.push({ a:P[ax.a], b:P[ax.b], w:1.3, al:.42 });
-  for(const [a, b] of gradAxes) statiques.push({ a:P[a], b:P[b], w:1.0, al:.40 });
+  for(const ax of axes) statiques.push({ a:P[ax.a], b:P[ax.b], w:1.3, al:.70, fam:1 });
+  for(const [a, b] of gradAxes) statiques.push({ a:P[a], b:P[b], w:1.0, al:.66, fam:1 });
 
   /* =========================================================
      CONTEXTE WEBGL
@@ -395,12 +397,13 @@ function holo(hote, graine){
     precision highp float;
     attribute vec3  aA, aB;
     attribute vec2  aCoin;     // x : extrémité 0 ou 1, y : côté -1 ou +1
-    attribute vec2  aStyle;    // x : épaisseur, y : opacité
+    attribute vec3  aStyle;    // x : épaisseur, y : opacité, z : famille
 
     uniform vec2  uTaille;     // largeur, hauteur en pixels
     uniform float uAngle, uTilt, uEch, uDecalY;
     uniform float uFocus, uDemi, uForce, uMaxCoC;
 
+    varying vec3  vCol;    // teinte, selon la famille
     varying float vTrav;   // position en travers du trait, en pixels
     varying float vDemi;   // demi-épaisseur nette
     varying float vCoC;    // rayon de flou
@@ -414,7 +417,7 @@ function holo(hote, graine){
       float cb = cos(uTilt), sb = sin(uTilt);
       float y  = p.y*cb - z1*sb;
       float zz = p.y*sb + z1*cb;
-      float f  = 3.4 / (3.4 + zz + 5.0);
+      float f  = 9.0 / (9.0 + zz + 13.0);   // perspective douce
       return vec3(uTaille.x*0.5 + x*f*uEch,
                   uTaille.y*0.5 - y*f*uEch + uDecalY,
                   zz);
@@ -443,12 +446,18 @@ function holo(hote, graine){
       vTrav = aCoin.y * rayon;
       vOp   = aStyle.y;
 
+      // 0 le bâtiment, 1 l'appareillage de relevé, 2 les éclats.
+      vCol = aStyle.z < 0.5 ? vec3(0.82, 0.85, 0.90)    // Blanc cassé
+           : aStyle.z < 1.5 ? vec3(0.12, 0.37, 0.66)    // Bleu Blueprint
+                            : vec3(0.22, 0.74, 0.85);   // Cyan léger
+
       gl_Position = vec4(pos.x / uTaille.x * 2.0 - 1.0,
                          1.0 - pos.y / uTaille.y * 2.0, 0.0, 1.0);
     }`;
 
   const FS_TRAIT = `
     precision highp float;
+    varying vec3  vCol;
     varying float vTrav, vDemi, vCoC, vOp;
     void main(){
       float d = abs(vTrav);
@@ -459,7 +468,7 @@ function holo(hote, graine){
       // pâlit. À la lettre le rapport ferait disparaître le lointain,
       // on en prend la racine pour qu'il reste lisible.
       a *= sqrt(vDemi / (vDemi + vCoC));
-      gl_FragColor = vec4(vec3(0.82, 0.85, 0.90) * vOp * a, 1.0);
+      gl_FragColor = vec4(vCol * vOp * a, 1.0);
     }`;
 
   /* ---------- Programme 2 : aberration chromatique ---------- */
@@ -507,7 +516,7 @@ function holo(hote, graine){
   };
 
   /* ---------- Tampons ---------- */
-  const FLOTS = 10;                       // par sommet
+  const FLOTS = 11;                       // par sommet
   const remplir = (segs) => {
     const d = new Float32Array(segs.length * 6 * FLOTS);
     let k = 0;
@@ -517,7 +526,7 @@ function holo(hote, graine){
         d[k++] = s.a[0]; d[k++] = s.a[1]; d[k++] = s.a[2];
         d[k++] = s.b[0]; d[k++] = s.b[1]; d[k++] = s.b[2];
         d[k++] = c[0];   d[k++] = c[1];
-        d[k++] = s.w;    d[k++] = s.al;
+        d[k++] = s.w;    d[k++] = s.al;  d[k++] = s.fam || 0;
       }
     return d;
   };
@@ -593,7 +602,7 @@ function holo(hote, graine){
     const x = p[0]*ca - p[2]*sa, z1 = p[0]*sa + p[2]*ca;
     const cb = Math.cos(tilt), sb = Math.sin(tilt);
     const y = p[1]*cb - z1*sb, zz = p[1]*sb + z1*cb;
-    const f = 3.4 / (3.4 + zz + 5.0), e = ECH();
+    const f = 9.0 / (9.0 + zz + 13.0), e = ECH();   // identique au shader
     return [L/2 + x*f*e, H/2 - y*f*e + H*.03, zz];
   };
 
@@ -614,7 +623,7 @@ function holo(hote, graine){
           + .055*Math.sin(5*a2 - temps*.0005 + c*1.7)
           + .032*Math.sin(8*a2 + temps*.0009);
         const p = [Math.cos(a2)*r, SOL-.28, Math.sin(a2)*r];
-        if(prec) S.push({ a:prec, b:p, w:.8, al:.20 });
+        if(prec) S.push({ a:prec, b:p, w:.8, al:.34, fam:1 });
         prec = p;
       }
     }
@@ -635,15 +644,19 @@ function holo(hote, graine){
 
     // Arcs spéculaires : la lumière glisse le long de l'anneau
     for(const arc of arcs){
-      const n = arc.pts.length;
-      const i0 = Math.floor(((temps*arc.v + arc.ph) % 1) * n);
-      for(let j = 0; j < 15; j++){
-        const g = Math.sin((j + .5)/15 * Math.PI);
-        S.push({ a: arc.pts[(i0+j) % n], b: arc.pts[(i0+j+1) % n],
-                 w: .9 + 2.6*g, al: .30 + 1.5*g });
+      const n = arc.pts.length, LG = 15;
+      // La course va de -LG à n : la lumière entre par un bout et
+      // sort par l'autre. Aucun point n'est relié à travers le vide.
+      const i0 = Math.floor(((temps*arc.v + arc.ph) % 1) * (n + LG)) - LG;
+      for(let j = 0; j < LG; j++){
+        const i = i0 + j;
+        if(i < 0 || i + 1 >= n) continue;       // hors de l'arc : rien
+        const g = Math.sin((j + .5)/LG * Math.PI);
+        S.push({ a: arc.pts[i], b: arc.pts[i+1],
+                 w: .9 + 2.6*g, al: .30 + 1.5*g, fam: 2 });
       }
-      for(let i = 0; i < n; i += 2)
-        S.push({ a: arc.pts[i], b: arc.pts[(i+1) % n], w:.8, al:.10 });
+      for(let i = 0; i + 1 < n; i += 2)
+        S.push({ a: arc.pts[i], b: arc.pts[i+1], w:.8, al:.10, fam:2 });
     }
 
     // Les réticules ne sont plus ici : ils passent sur le calque 2D,
@@ -655,7 +668,7 @@ function holo(hote, graine){
       const l = e.l * .0022;
       S.push({ a:[e.p[0]-Math.cos(e.ang)*l, e.p[1]-Math.sin(e.ang)*l, e.p[2]],
                b:[e.p[0]+Math.cos(e.ang)*l, e.p[1]+Math.sin(e.ang)*l, e.p[2]],
-               w: 2.6, al: .5 + 1.3*g });
+               w: 2.6, al: .5 + 1.3*g, fam: 2 });
     }
     return S;
   };
@@ -796,7 +809,7 @@ function holo(hote, graine){
       if(!n) return;
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       posAttr(A.aA, 3, 0); posAttr(A.aB, 3, 3);
-      posAttr(A.aCoin, 2, 6); posAttr(A.aStyle, 2, 8);
+      posAttr(A.aCoin, 2, 6); posAttr(A.aStyle, 3, 8);
       gl.drawArrays(gl.TRIANGLES, 0, n);
     };
     tracer(bufStat, nStat);
