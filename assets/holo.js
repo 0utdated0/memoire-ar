@@ -720,7 +720,7 @@ function holo(hote, graine){
   ['pointerup','pointercancel','pointerleave'].forEach(n => hote.addEventListener(n, fin));
 
   // Projection identique à celle du shader, pour placer le texte.
-  const ECH = () => Math.min(L, H) * .55;
+  const ECH = () => Math.min(L, H) * .39;   // cadrage large
   const proj = (p) => {
     const ca = Math.cos(angle), sa = Math.sin(angle);
     const x = p[0]*ca - p[2]*sa, z1 = p[0]*sa + p[2]*ca;
