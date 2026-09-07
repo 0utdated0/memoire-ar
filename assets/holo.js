@@ -327,6 +327,21 @@ function holo(hote, graine){
      --------------------------------------------------------- */
   const YSOL = SOL - .02, RMAX = 14, PAS_T = .55;
   const opaciteSol = (r) => .22 * Math.exp(-r / 3.6);
+
+  /* Relief. Le sol reste parfaitement plat sous le bâtiment, puis se
+     soulève à mesure qu'on s'en éloigne : quelques ondulations
+     proches, des collines, puis des reliefs francs au loin. Le
+     coefficient croît au carré de la distance, ce qui garantit une
+     transition douce plutôt qu'une marche. */
+  const relief = (x, z) => {
+    const r = Math.hypot(x, z);
+    const k = Math.max(0, Math.min(1, (r - 2.8) / 8.5));
+    return (  .58 * Math.sin(x * .41 + 1.3) * Math.cos(z * .36 - .7)
+            + .31 * Math.sin(x * .77 - 2.1) * Math.sin(z * .65 + 1.9)
+            + .14 * Math.cos(x * 1.48 + .4) * Math.cos(z * 1.33 - 1.1)
+           ) * k * k * 1.55;
+  };
+  const solEn = (x, z) => YSOL + relief(x, z);
   for(let i = -Math.round(RMAX/PAS_T); i <= Math.round(RMAX/PAS_T); i++){
     const t = i * PAS_T;
     for(let j = -Math.round(RMAX/PAS_T); j < Math.round(RMAX/PAS_T); j++){
@@ -335,8 +350,8 @@ function holo(hote, graine){
       if(rm > RMAX) continue;
       const al = opaciteSol(rm);
       if(al < .004) continue;
-      statiques.push({ a:[t, YSOL, u0], b:[t, YSOL, u1], w:.9, al, fam:1 });
-      statiques.push({ a:[u0, YSOL, t], b:[u1, YSOL, t], w:.9, al, fam:1 });
+      statiques.push({ a:[t, solEn(t,u0), u0], b:[t, solEn(t,u1), u1], w:.9, al, fam:1 });
+      statiques.push({ a:[u0, solEn(u0,t), t], b:[u1, solEn(u1,t), t], w:.9, al, fam:1 });
     }
   }
 
@@ -358,11 +373,12 @@ function holo(hote, graine){
     if(al < .006) continue;
     const h = .16 + aleaA() * .20;
     const e = .045 + aleaA() * .035;
+    const y0 = solEn(cx, cz);
     // fût
-    statiques.push({ a:[cx, YSOL, cz], b:[cx, YSOL + h, cz], w:.9, al, fam:1 });
+    statiques.push({ a:[cx, y0, cz], b:[cx, y0 + h, cz], w:.9, al, fam:1 });
     // trois couronnes
     for(let c = 0; c < 3; c++){
-      const y = YSOL + h * (.42 + c * .21);
+      const y = y0 + h * (.42 + c * .21);
       const rr = e * (1.9 - c * .5);
       const N = 6, an = [];
       for(let k = 0; k < N; k++){
@@ -372,7 +388,32 @@ function holo(hote, graine){
       for(let k = 0; k < N; k++)
         statiques.push({ a:an[k], b:an[(k+1)%N], w:.9, al: al*.72, fam:1 });
       if(c === 2) for(let k = 0; k < N; k += 2)
-        statiques.push({ a:an[k], b:[cx, YSOL + h * 1.06, cz], w:.9, al: al*.6, fam:1 });
+        statiques.push({ a:an[k], b:[cx, y0 + h * 1.06, cz], w:.9, al: al*.6, fam:1 });
+    }
+  }
+
+  /* Trois crêtes de montagne à l'horizon, bien au-delà du terrain.
+     Elles ne suivent pas l'atténuation du sol, sinon elles seraient
+     invisibles : elles ont leur propre opacité, faible et constante,
+     comme une ligne d'horizon. */
+  for(let c = 0; c < 3; c++){
+    const R = 17 + c * 4.2, AMP = 1.5 + c * 1.35, al = .115 - c * .028;
+    const N = 190, crete = [];
+    for(let i = 0; i <= N; i++){
+      const a = i / N * Math.PI * 2;
+      const d = (  Math.sin(a * (5 + c*3) + c * 2.1)
+                 + .62 * Math.sin(a * (11 + c*4) - 1.4)
+                 + .34 * Math.sin(a * (23 + c*5) + .8) ) / 1.96;
+      const hh = Math.max(0, d) * AMP + .10;
+      const rr = R + Math.sin(a * (3 + c)) * 1.6;
+      crete.push([Math.cos(a) * rr, YSOL + hh, Math.sin(a) * rr]);
+    }
+    for(let i = 0; i < N; i++)
+      statiques.push({ a: crete[i], b: crete[i+1], w:.9, al, fam:1 });
+    // quelques versants, un point sur douze, pour donner du volume
+    for(let i = 0; i < N; i += 12){
+      const p = crete[i];
+      statiques.push({ a:p, b:[p[0]*1.03, YSOL, p[2]*1.03], w:.9, al: al*.55, fam:1 });
     }
   }
 
@@ -386,7 +427,8 @@ function holo(hote, graine){
   const surRoute = (t) => {
     const r = 13.2 - 11.4 * t;
     const a = .95 + 1.25 * Math.sin(t * 2.15) + t * .55;
-    return [Math.cos(a) * r, YSOL + .006, Math.sin(a) * r];
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    return [x, solEn(x, z) + .006, z];
   };
   const bordRoute = (t, cote) => {
     const p = surRoute(t), q = surRoute(Math.min(1, t + .004));
@@ -418,7 +460,8 @@ function holo(hote, graine){
     const x = p[0] - dz/m * c, z = p[2] + dx/m * c;
     const al = opaciteSol(Math.hypot(x, z)) * 2.6;
     if(al < .01) continue;
-    statiques.push({ a:[x, YSOL, z], b:[x, YSOL + .020, z], w:.9, al, fam:1 });
+    const ys = solEn(x, z);
+    statiques.push({ a:[x, ys, z], b:[x, ys + .020, z], w:.9, al, fam:1 });
   }
   // et un attroupement au pied de la tour
   for(let n = 0; n < 70; n++){
@@ -851,6 +894,29 @@ function holo(hote, graine){
         if(prec) S.push({ a:prec, b:p, w:.9, al:.16, fam:1 });
         prec = p;
       }
+    }
+
+    /* Poussière en suspension. Chaque grain suit une dérive lente et
+       propre, faite de trois sinusoïdes de périodes incommensurables :
+       aucun ne repasse jamais par la même position. Ils sont plus
+       denses près du sol et se raréfient en montant. */
+    for(let g = 0; g < 260; g++){
+      const f1 = .000031 + (g % 17) * .0000042;
+      const f2 = .000047 + (g % 23) * .0000035;
+      const f3 = .000019 + (g % 13) * .0000051;
+      const ph = g * 2.399;
+      const R  = .7 + (g % 31) / 31 * 3.1;
+      const a  = ph + temps * f1;
+      const x  = Math.cos(a) * R + Math.sin(temps * f2 + ph) * .26;
+      const z  = Math.sin(a) * R + Math.cos(temps * f3 + ph * .7) * .26;
+      const y  = SOL + .04 + Math.pow((g % 29) / 29, 1.7) * 2.9
+                 + Math.sin(temps * f2 * 1.7 + ph) * .10;
+      // scintillement propre à chaque grain
+      const sc = .5 + .5 * Math.sin(temps * .0011 + ph * 3.1);
+      const al = (.05 + .16 * sc) * (1 - (y - SOL) / 3.6);
+      if(al < .012) continue;
+      const e = .006;
+      S.push({ a:[x - e, y, z], b:[x + e, y, z], w:.9, al, fam:0 });
     }
 
     /* Véhicules volants. Chacun suit sa propre orbite, à son altitude
