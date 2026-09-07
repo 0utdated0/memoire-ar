@@ -301,9 +301,21 @@ function holo(hote, graine){
   cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block';
   hote.appendChild(cv);
 
-  // Calque texte : le GPU ne dessine pas de caractères.
-  const tx = document.createElement('canvas');
-  tx.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none';
+  /* DEUX calques de texte, de part et d'autre du bâtiment.
+     Le GPU ne dessine pas de caractères, le texte va donc sur des
+     canvas 2D. Un seul calque, forcément au-dessus, plaquait les
+     étiquettes devant le volume quoi qu'il arrive : c'était la cause
+     de tout. Avec un calque DESSOUS, une étiquette située derrière
+     est simplement recouverte par le filaire, comme n'importe quel
+     objet de la scène. Elle reste allumée, elle passe derrière. */
+  const txB = document.createElement('canvas');   // derrière le bâtiment
+  txB.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:0';
+  hote.insertBefore(txB, cv);
+  const tB = txB.getContext('2d');
+  cv.style.zIndex = '1';
+
+  const tx = document.createElement('canvas');    // devant le bâtiment
+  tx.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:2';
   hote.appendChild(tx);
   const t2 = tx.getContext('2d');
 
@@ -510,8 +522,9 @@ function holo(hote, graine){
   const redim = () => {
     DPR = Math.min(devicePixelRatio || 1, 2);
     L = hote.clientWidth || 1; H = hote.clientHeight || 1;
-    for(const c of [cv, tx]){ c.width = L*DPR; c.height = H*DPR; }
+    for(const c of [cv, tx, txB]){ c.width = L*DPR; c.height = H*DPR; }
     t2.setTransform(DPR, 0, 0, DPR, 0, 0);
+    tB.setTransform(DPR, 0, 0, DPR, 0, 0);
     gl.bindTexture(gl.TEXTURE_2D, texte);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, L*DPR, H*DPR, 0,
                   gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -740,10 +753,11 @@ function holo(hote, graine){
     t2.fillRect(x - 3, y - 9, w + 6, 12);
   };
 
-  /* Carte de profondeur : le modèle est projeté une fois par image
-     dans une grille grossière, en retenant la profondeur la plus
-     proche par case. Une étiquette est masquée si le bâtiment occupe
-     sa case en étant devant elle. Un seul balayage pour toutes. */
+  /* Carte de profondeur d'écran : le modèle est projeté une fois par
+     image dans une grille grossière, en retenant la profondeur la plus
+     proche par case. Elle sert à savoir si une étiquette est devant ou
+     derrière le bâtiment, donc sur quel calque la dessiner. Un seul
+     balayage du modèle, quel que soit le nombre d'étiquettes. */
   const CASE = 22;
   let grille = null, gW = 0, gH = 0;
   const construireGrille = () => {
@@ -778,51 +792,56 @@ function holo(hote, graine){
     // rouge, verte et bleue dilatées depuis le centre de l'image,
     // recomposées en additif, exactement comme le shader du bâtiment.
     const CANAUX2D = [[1.0045,'255,0,0'], [1.0,'0,255,0'], [0.9955,'0,0,255']];
-    t2.font = '10px ui-monospace, "SFMono-Regular", monospace';
+    const POLICE = '10px ui-monospace, "SFMono-Regular", monospace';
+    t2.font = POLICE; tB.font = POLICE;
     for(const et of etiquettes){
       const a = proj(P[et.idx]);              // le point visé
       const qx = a[0] + et.dx, qy = a[1] + et.dy;
-      // L'étiquette est un objet du monde : intensité constante, elle
-      // n'est jamais atténuée par la distance. Elle disparaît pour une
-      // seule raison, le bâtiment la cache.
-      if(occulte(a)) continue;
+
+      // TOUJOURS allumée. Seul son calque change : devant le bâtiment
+      // sur le calque du dessus, derrière sur celui du dessous, où le
+      // filaire vient la recouvrir. C'est de la profondeur, pas une
+      // extinction.
+      const g = occulte(a) ? tB : t2;
+
       const d = Math.min(2, Math.abs((a[2] - zMed) / 1.15));
       const coc = Math.min(7, Math.pow(d, 1.55) * 4.4);
       const al = .82;
-      const w = t2.measureText(et.t).width;
+      const w = g.measureText(et.t).width;
 
-      t2.globalCompositeOperation = 'source-over';
-      t2.filter = 'none';
-      t2.globalAlpha = al * .62;
-      t2.fillStyle = 'rgba(3,8,15,1)';
-      t2.fillRect(qx - 4, qy - 9, w + 8, 13);
+      g.globalCompositeOperation = 'source-over';
+      g.filter = 'none';
+      g.globalAlpha = al * .62;
+      g.fillStyle = 'rgba(3,8,15,1)';
+      g.fillRect(qx - 4, qy - 9, w + 8, 13);
 
       // les trois canaux, en additif
-      t2.globalCompositeOperation = 'lighter';
+      g.globalCompositeOperation = 'lighter';
       for(const [k, col] of CANAUX2D){
         const ax = L/2 + (qx - L/2)*k, ay = H/2 + (qy - H/2)*k;
         const bx = L/2 + (a[0] - L/2)*k, by = H/2 + (a[1] - H/2)*k;
-        t2.fillStyle = `rgb(${col})`;
-        t2.strokeStyle = `rgb(${col})`;
-        if(coc > .4 && filtreOK) t2.filter = `blur(${coc.toFixed(2)}px)`;
-        else t2.filter = 'none';
-        t2.globalAlpha = al * .42;
-        t2.fillText(et.t, ax, ay);
+        g.fillStyle = `rgb(${col})`;
+        g.strokeStyle = `rgb(${col})`;
+        if(coc > .4 && filtreOK) g.filter = `blur(${coc.toFixed(2)}px)`;
+        else g.filter = 'none';
+        g.globalAlpha = al * .42;
+        g.fillText(et.t, ax, ay);
         // trait de rappel jusqu'au point visé, avec sa patte
-        t2.globalAlpha = al * .30;
-        t2.beginPath();
-        t2.moveTo(ax + (et.dx > 0 ? -4 : w + 4), ay - 3);
-        t2.lineTo(ax + (et.dx > 0 ? -14 : w + 14), ay - 3);
-        t2.lineTo(bx, by);
-        t2.stroke();
+        g.globalAlpha = al * .30;
+        g.beginPath();
+        g.moveTo(ax + (et.dx > 0 ? -4 : w + 4), ay - 3);
+        g.lineTo(ax + (et.dx > 0 ? -14 : w + 14), ay - 3);
+        g.lineTo(bx, by);
+        g.stroke();
         // petite croix sur le point visé
-        t2.globalAlpha = al * .38;
-        t2.beginPath();
-        t2.moveTo(bx - 4, by); t2.lineTo(bx + 4, by);
-        t2.moveTo(bx, by - 4); t2.lineTo(bx, by + 4);
-        t2.stroke();
+        g.globalAlpha = al * .38;
+        g.beginPath();
+        g.moveTo(bx - 4, by); g.lineTo(bx + 4, by);
+        g.moveTo(bx, by - 4); g.lineTo(bx, by + 4);
+        g.stroke();
       }
-      t2.globalCompositeOperation = 'source-over';
+      g.globalCompositeOperation = 'source-over';
+      g.filter = 'none';
     }
     t2.filter = 'none';
 
