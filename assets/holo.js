@@ -40,135 +40,163 @@ function holo(hote, graine){
   const quad = (c,a,b,d,e) => { sg(c,a,b); sg(c,b,d); sg(c,d,e); sg(c,e,a); };
 
   /* ---------------------------------------------------------
-     Tour vrillée à plateaux arrondis.
+     Tour à couture spiralée.
 
-     Vocabulaire retenu : plan en superellipse, donc des angles
-     toujours arrondis ; plateaux très rapprochés qui strient le
-     volume ; vrillage progressif sur la hauteur ; évasement en
-     pied ; socle en plateaux organiques débordants ; arêtes
-     lumineuses continues. Aucune arête vive, aucune toiture.
+     Trois traits relevés sur la référence :
+       - une jupe évasée en pied, faite de plateaux cascadants
+       - une couture en spirale qui sépare deux peaux : verre lisse
+         tendu en verticales d'un côté, ailettes horizontales serrées
+         de l'autre
+       - un sommet tranché en biais, ouvert, plus haut d'un côté
      --------------------------------------------------------- */
   const SOL = -1.15;
   const lumieres = [];
 
-  // Superellipse : le rayon d'angle est ce qui distingue un plateau
-  // arrondi d'une simple dalle rectangulaire.
-  const NP = 44;
-  const plateau = (cx, cz, rx, rz, y, rot, galbe) => {
-    const pts = [];
-    for(let i = 0; i < NP; i++){
-      const t = i/NP * Math.PI*2;
-      const c = Math.cos(t), s2 = Math.sin(t);
-      const e = 2 / galbe;
-      const x = rx * Math.sign(c) * Math.pow(Math.abs(c), e);
-      const z = rz * Math.sign(s2) * Math.pow(Math.abs(s2), e);
-      const X = x*Math.cos(rot) - z*Math.sin(rot);
-      const Z = x*Math.sin(rot) + z*Math.cos(rot);
-      pts.push(pt(cx + X, y, cz + Z));
-    }
-    return pts;
+  const NP = 58, NIV = 74, HT = 2.95;
+  const VRILLE = .62;                 // le fût pivote doucement
+  const COUTURE0 = 1.15, COUTURE = 4.2;   // la couture fait ~2/3 de tour
+
+  // Profil : jupe très ouverte en bas, fût élancé ensuite.
+  const profil = (t) => (1 + 3.30 * Math.exp(-t * 13.5)) * (1 - .16*t);
+
+  // Sommet tranché en biais : la hauteur maximale dépend de l'azimut.
+  const coupe = (th) => 1 - .30 * (1 + Math.cos(th - .55)) * .5;
+
+  const RX = .195, RZ = .150;
+  const pointFut = (t, th) => {
+    const k = profil(t), rot = t*VRILLE;
+    const x = Math.cos(th)*RX*k, z = Math.sin(th)*RZ*k;
+    return [x*Math.cos(rot) - z*Math.sin(rot),
+            SOL + t*HT,
+            x*Math.sin(rot) + z*Math.cos(rot)];
   };
 
-  /* ---- La tour ---- */
-  const NIV = 38, HT = 2.55, VRILLE = 2.15;   // 123° de vrillage
-  const etages = [];
+  // Un point appartient-il à la peau à ailettes ou à la peau lisse ?
+  const cotéAilettes = (t, j2) => {
+    const th = j2/NP * Math.PI*2;
+    let d = (th - (COUTURE0 + t*COUTURE)) % (Math.PI*2);
+    if(d < 0) d += Math.PI*2;
+    return d < Math.PI;
+  };
+
+  const niveaux = [];
   for(let i = 0; i <= NIV; i++){
-    const t = i/NIV;
-    const y = SOL + t*HT;
-    // Évasement en pied, puis effilement, puis léger renflement haut
-    const evase = 1 + .95 * Math.exp(-t*7.5);
-    const fil   = 1 - .34 * Math.pow(t, 1.6) + .10 * Math.pow(t, 3.4);
-    const k = evase * fil;
-    const rot = t*VRILLE + .35*Math.sin(t*3.1);   // le vrillage respire
-    etages.push({ pts: plateau(0, 0, .34*k, .25*k, y, rot, 3.4), y, t, k });
+    const t = i/NIV, ligne = [];
+    for(let j2 = 0; j2 < NP; j2++){
+      const th = j2/NP * Math.PI*2;
+      ligne.push(t <= coupe(th) ? pt(...pointFut(t, th)) : -1);
+    }
+    niveaux.push({ ligne, t });
   }
 
-  // Les plateaux, très rapprochés : c'est cette striation horizontale
-  // qui donne la peau du bâtiment.
-  for(const e of etages)
-    for(let i = 0; i < NP; i++) sg(dalles, e.pts[i], e.pts[(i+1)%NP]);
-
-  // Nervures verticales : elles suivent le vrillage et deviennent
-  // donc des spirales. Ce sont elles qui racontent la torsion.
-  const NERV = 14;
-  for(let n = 0; n < NERV; n++){
-    const i = Math.round(n * NP / NERV);
-    for(let e = 0; e < NIV; e++)
-      sg(porteur, etages[e].pts[i], etages[e+1].pts[i]);
+  // --- Peau à ailettes : un trait horizontal à CHAQUE niveau ---
+  // C'est cette densité qui fait la surface striée de la référence.
+  for(const n of niveaux){
+    for(let j2 = 0; j2 < NP; j2++){
+      const a = n.ligne[j2], b = n.ligne[(j2+1)%NP];
+      if(a < 0 || b < 0) continue;
+      const jupe = n.t < .17;                 // la jupe est striée partout
+      if(jupe || cotéAilettes(n.t, j2))
+        sg(dalles, a, b);
+    }
   }
-  // Meneaux courts, un plateau sur deux, sur toute la circonférence
-  for(let e = 0; e < NIV; e += 2)
-    for(let i = 0; i < NP; i += 2){
-      sg(resille, etages[e].pts[i], etages[e+1].pts[i]);
-      if((e*5 + i) % 9 === 0){
-        const a = P[etages[e].pts[i]], b = P[etages[e+1].pts[i]];
-        lumieres.push([(a[0]+b[0])/2, (a[1]+b[1])/2, (a[2]+b[2])/2]);
+
+  // --- Peau lisse : verticales tendues, et seulement quelques
+  //     horizontales de rappel ---
+  for(let i = 0; i < NIV; i++){
+    const n = niveaux[i], h = niveaux[i+1];
+    for(let j2 = 0; j2 < NP; j2++){
+      const a = n.ligne[j2], b = h.ligne[j2];
+      if(a < 0 || b < 0) continue;
+      if(n.t >= .17 && !cotéAilettes(n.t, j2)) sg(resille, a, b);
+    }
+    if(i % 9 === 0){
+      for(let j2 = 0; j2 < NP; j2++){
+        const a = n.ligne[j2], b = n.ligne[(j2+1)%NP];
+        if(a >= 0 && b >= 0 && !cotéAilettes(n.t, j2)) sg(resille, a, b);
       }
     }
-
-  /* ---- Arêtes lumineuses continues, en spirale ---- */
-  const filsLumiere = [];
-  for(const dep of [3, 18, 31]){
-    const fil = [];
-    for(let e = 0; e <= NIV; e++)
-      fil.push(P[etages[e].pts[(dep + Math.round(e*.55)) % NP]]);
-    filsLumiere.push(fil);
   }
 
-  /* ---- Porte-à-faux : trois plateaux qui s'échappent ---- */
-  for(const [niv, ang, port] of [[9, .6, 1.9], [19, 3.4, 1.6], [28, 5.5, 1.35]]){
-    const e = etages[niv];
-    const dx = Math.cos(ang), dz = Math.sin(ang);
-    for(const dy of [0, .085]){
-      const p = plateau(dx*.20*port, dz*.20*port,
-                        .34*e.k*port*.62, .25*e.k*port*.62,
-                        e.y + dy, ang, 3.0);
-      for(let i = 0; i < NP; i++) sg(dalles, p[i], p[(i+1)%NP]);
-      if(dy === 0) for(let i = 0; i < NP; i += 4) sg(resille, p[i], e.pts[i]);
+  // --- La couture, arête maîtresse : un trait fort en spirale ---
+  const couture = [];
+  for(let i = 0; i <= NIV; i++){
+    const t = i/NIV, th = COUTURE0 + t*COUTURE;
+    if(t > coupe(th)) continue;
+    couture.push(pt(...pointFut(t, th)));
+  }
+  for(let i = 0; i + 1 < couture.length; i++) sg(porteur, couture[i], couture[i+1]);
+  // Couture opposée, celle qui referme la peau lisse
+  const couture2 = [];
+  for(let i = 0; i <= NIV; i++){
+    const t = i/NIV, th = COUTURE0 + t*COUTURE + Math.PI;
+    if(t > coupe(th)) continue;
+    couture2.push(pt(...pointFut(t, th)));
+  }
+  for(let i = 0; i + 1 < couture2.length; i++) sg(porteur, couture2[i], couture2[i+1]);
+
+  // --- Lèvre du sommet : le tranchant oblique de l'ouverture ---
+  const levre = [];
+  for(let j2 = 0; j2 < NP; j2++){
+    const th = j2/NP * Math.PI*2;
+    levre.push(pt(...pointFut(coupe(th), th)));
+  }
+  for(let j2 = 0; j2 < NP; j2++) sg(porteur, levre[j2], levre[(j2+1)%NP]);
+  // Doublure intérieure : l'ouverture est un tube, pas un disque
+  for(let j2 = 0; j2 < NP; j2++){
+    const th = j2/NP * Math.PI*2;
+    const p = pointFut(coupe(th) - .07, th);
+    const q = pt(p[0]*.86, p[1], p[2]*.86);
+    if(j2 % 2 === 0) sg(resille, levre[j2], q);
+  }
+
+  /* ---- Jupe : plateaux cascadants qui débordent au sol ---- */
+  const jupe = [];
+  for(let k = 0; k < 7; k++){
+    const y = SOL - .02 - k*.055;
+    const g = 1.05 + k*.30;
+    const p = [];
+    for(let j2 = 0; j2 < NP; j2++){
+      const th = j2/NP*Math.PI*2;
+      const et = 1 + .30*Math.cos(th*2 + .7) + .16*Math.cos(th*3 - 1.2);
+      p.push(pt(Math.cos(th)*RX*profil(0)*g*et, y, Math.sin(th)*RZ*profil(0)*g*et*1.25));
     }
+    for(let j2 = 0; j2 < NP; j2++) sg(dalles, p[j2], p[(j2+1)%NP]);
+    if(k) for(let j2 = 0; j2 < NP; j2 += 3) sg(resille, jupe[k-1][j2], p[j2]);
+    jupe.push(p);
   }
 
-  /* ---- Socle : plateaux organiques débordants ---- */
-  const socle = [];
-  for(let k = 0; k < 4; k++){
-    const y = SOL - .10 + k*.13;
-    const g = 1 - k*.13;
-    const p = plateau(-.06, .04, 1.02*g, .78*g, y, -.5 + k*.22, 2.6);
-    socle.push(p);
-    for(let i = 0; i < NP; i++) sg(dalles, p[i], p[(i+1)%NP]);
-    if(k) for(let i = 0; i < NP; i += 3) sg(resille, socle[k-1][i], p[i]);
+  /* ---- Entrée : évidement éclairé sous la jupe ---- */
+  for(let j2 = 26; j2 <= 34; j2++){
+    const a = P[jupe[6][j2]];
+    sg(porteur, jupe[6][j2], pt(a[0], SOL - .46, a[2]));
+    if(j2 % 2 === 0) lumieres.push([a[0]*.96, SOL - .30, a[2]*.96]);
   }
-  // Vitrage du socle, en bandeau continu
-  for(let i = 0; i < NP; i += 2) sg(resille, socle[0][i], socle[3][i]);
+  for(let j2 = 26; j2 < 34; j2++)
+    sg(resille, pt(P[jupe[6][j2]][0], SOL - .46, P[jupe[6][j2]][2]),
+                pt(P[jupe[6][j2+1]][0], SOL - .46, P[jupe[6][j2+1]][2]));
 
-  /* ---- Entrée : une échancrure dans le socle, pas une porte plate ---- */
-  for(let i = 20; i <= 26; i++){
-    const a = P[socle[3][i]];
-    const bas = pt(a[0]*1.02, SOL - .17, a[2]*1.02);
-    sg(porteur, socle[3][i], bas);
-    if(i % 2 === 0) lumieres.push([a[0]*1.02, SOL - .06, a[2]*1.02]);
-  }
-  for(let i = 20; i < 26; i++)
-    sg(resille, pt(P[socle[3][i]][0]*1.02, SOL - .17, P[socle[3][i]][2]*1.02),
-                pt(P[socle[3][i+1]][0]*1.02, SOL - .17, P[socle[3][i+1]][2]*1.02));
+  /* ---- Baies éclairées, semées sur la peau à ailettes ---- */
+  for(let i = 6; i < NIV; i += 5)
+    for(let j2 = 0; j2 < NP; j2 += 7){
+      if(!cotéAilettes(i/NIV, j2)) continue;
+      const a = niveaux[i].ligne[j2];
+      if(a >= 0) lumieres.push([P[a][0]*1.005, P[a][1], P[a][2]*1.005]);
+    }
 
-  /* ---- Couronnement : le sommet est évidé, jamais pointu ---- */
-  const cime = etages[NIV];
-  const oeil = plateau(0, 0, .34*cime.k*.42, .25*cime.k*.42,
-                       cime.y - .07, VRILLE, 3.4);
-  for(let i = 0; i < NP; i++) sg(dalles, oeil[i], oeil[(i+1)%NP]);
-  for(let i = 0; i < NP; i += 3) sg(resille, cime.pts[i], oeil[i]);
+  /* ---- Arêtes lumineuses : les deux coutures ---- */
+  const filsLumiere = [couture.map(k => P[k]), couture2.map(k => P[k])];
 
-  const feux = [];
-  for(let i = 0; i < NP; i += Math.round(NP/3))
-    feux.push([P[cime.pts[i]][0], P[cime.pts[i]][1], P[cime.pts[i]][2]]);
+  const feux = [ P[levre[Math.round(NP*.15)]], P[levre[Math.round(NP*.65)]] ]
+                 .map(p => [p[0], p[1], p[2]]);
 
   /* ---- Ancres ---- */
-  const REMARQUABLES = [ etages[2].pts[6], etages[9].pts[20], etages[16].pts[34],
-                         etages[24].pts[10], etages[31].pts[26], etages[NIV].pts[0] ];
+  const REMARQUABLES = [ niveaux[3].ligne[10], niveaux[16].ligne[30],
+                         niveaux[34].ligne[48], niveaux[52].ligne[16],
+                         couture[Math.floor(couture.length*.55)], levre[8] ];
   for(let i = 0; i < REMARQUABLES.length; i++)
     ancres.push({ idx: REMARQUABLES[i], phase: alea()*6.28, n: i+1,
-                  h: (P[REMARQUABLES[i]][1] - SOL) * 74 });
+                  h: (P[REMARQUABLES[i]][1] - SOL) * 96 });
 
   /* --- Gnomon : les trois axes du relevé --- */
   const AX = 1.30;
