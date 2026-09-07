@@ -350,22 +350,13 @@ function holo(hote, graine){
   // Le flou coûte cher : on l'écarte sur petit écran.
   const flouActif = () => L > 760 && !lent;
 
-  // Safari n'a longtemps pas pris en charge ctx.filter. On teste, et
-  // si c'est absent on émule le flou par passes décalées.
-  let filtreOK = false;
-  try {
-    const t = document.createElement('canvas').getContext('2d');
-    t.filter = 'blur(2px)';
-    filtreOK = (t.filter === 'blur(2px)');
-  } catch(e){ filtreOK = false; }
-
-  // Le rayon de ctx.filter s'exprime en pixels physiques : sur un
-  // écran Retina il faut le doubler pour obtenir l'effet voulu.
-  const DPR = Math.min(devicePixelRatio || 1, 2);
+  // ctx.filter est ignoré par plusieurs moteurs lorsqu'on dessine en
+  // composition additive, ce qui est notre cas. On ne s'y fie plus :
+  // le flou est produit par un noyau de passes décalées, une méthode
+  // qui ne dépend d'aucune fonction du navigateur.
 
   const trace = () => {
     ctx.globalCompositeOperation = 'source-over';
-    ctx.filter = 'none';
     ctx.clearRect(0,0,L,H);
     ctx.globalCompositeOperation = 'lighter';
 
@@ -376,7 +367,6 @@ function holo(hote, graine){
     }
 
     ctx.globalCompositeOperation = 'source-over';
-    ctx.filter = 'none';
   };
 
   const dessine = (k) => {
@@ -405,18 +395,18 @@ function holo(hote, graine){
 
     const bandes = [];
     if(flouActif()){
-      const NB = 7;
+      const NB = 5;
       for(let i = 0; i < NB; i++){
         const a = zMin + (zMax - zMin) * i / NB;
         const b = zMin + (zMax - zMin) * (i+1) / NB;
         // distance au plan de netteté, en demi-profondeurs de bâtiment
         const d = Math.min(2, Math.abs(((a+b)/2 - zMid) / demi));
-        const r = Math.min(6, 4.4 * d * d);
-        bandes.push({ min:(i===0 ? -1e9 : a), max:(i===NB-1 ? 1e9 : b), r,
-                      blur: r < .3 ? 'none' : `blur(${(r*DPR).toFixed(2)}px)`,
-                      ep: 1 + r * .55, op: 1 + r * .40 });
+        const r = Math.min(7, 5.0 * d * d);
+        // Plus de compensation d'opacité : le noyau conserve déjà
+        // l'énergie totale du trait, il ne fait que l'étaler.
+        bandes.push({ min:(i===0 ? -1e9 : a), max:(i===NB-1 ? 1e9 : b), r });
       }
-    } else bandes.push({ min:-1e9, max:1e9, r:0, blur:'none', ep:1, op:1 });
+    } else bandes.push({ min:-1e9, max:1e9, r:0 });
 
     const dansBande = (a,b,bd) => {
       const z = (pts[a][2] + pts[b][2]) / 2;
@@ -428,8 +418,7 @@ function holo(hote, graine){
       for(const [a,b] of couche) if(dansBande(a,b,bd)) seg.push([a,b]);
       if(!seg.length) return;
 
-      const al = Math.min(1, alpha * (bd.op || 1));
-      const w  = lw * (bd.ep || 1);
+      const r = bd.r || 0;
       if(dash){ ctx.setLineDash(dash); ctx.lineDashOffset = -temps * .02; }
       else ctx.setLineDash([]);
 
@@ -442,28 +431,39 @@ function holo(hote, graine){
         ctx.stroke();
       };
 
-      if(bd.r > .3 && !filtreOK){
-        // Émulation : sept passes réparties en cercle. Sans ctx.filter
-        // c'est la seule façon d'obtenir un étalement du trait.
-        const N = 7;
-        ctx.lineWidth = w;
-        ctx.globalAlpha = Math.min(1, al * 1.5 / N);
-        for(let i = 0; i < N; i++){
-          const th = i/N * Math.PI*2;
-          chemin(Math.cos(th)*bd.r, Math.sin(th)*bd.r);
-        }
-        ctx.globalAlpha = Math.min(1, al * .5);
+      if(r < .3){
+        ctx.globalAlpha = alpha; ctx.lineWidth = lw;
         chemin(0, 0);
-      } else {
-        ctx.globalAlpha = al;
-        ctx.lineWidth = w;
-        chemin(0, 0);
+        ctx.setLineDash([]);
+        return;
+      }
+
+      // Noyau de flou : un point central, une couronne intérieure et
+      // une couronne extérieure. Les poids somment à 1, donc la
+      // luminosité totale du trait est conservée : il s'étale au lieu
+      // de s'éclaircir. Le trait s'épaissit légèrement avec le rayon,
+      // comme le fait un vrai cercle de confusion.
+      const N = Math.max(6, Math.min(12, Math.round(r * 1.9) + 4));
+      ctx.lineWidth = lw * (1 + r * .16);
+
+      ctx.globalAlpha = alpha * .26;                 // cœur
+      chemin(0, 0);
+
+      ctx.globalAlpha = alpha * .46 / N;             // couronne intérieure
+      for(let i = 0; i < N; i++){
+        const th = i/N * Math.PI*2;
+        chemin(Math.cos(th)*r*.48, Math.sin(th)*r*.48);
+      }
+
+      ctx.globalAlpha = alpha * .28 / N;             // couronne extérieure
+      for(let i = 0; i < N; i++){
+        const th = (i + .5)/N * Math.PI*2;
+        chemin(Math.cos(th)*r, Math.sin(th)*r);
       }
       ctx.setLineDash([]);
     };
 
     for(const bd of bandes){
-      ctx.filter = bd.blur;
       // La trame de sol s'efface avec l'éloignement du centre :
       // quatre couronnes d'opacité décroissante.
       for(let c = 0; c < 4; c++){
@@ -479,7 +479,6 @@ function holo(hote, graine){
       lot(dalles,  .50, .8, bd);
       lot(porteur, .68,1.0, bd);
     }
-    ctx.filter = 'none';
 
     // ---- Champ de courbes de niveau, animé -------------------
     ctx.globalAlpha = .17; ctx.lineWidth = .5; ctx.setLineDash([]);
