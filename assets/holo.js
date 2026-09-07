@@ -116,6 +116,34 @@ function holo(hote, graine){
     sg(porteur, pt(Math.cos(t)*r, SOL - .28, Math.sin(t)*r), matBas[i]);
   }
 
+  /* --- Gnomon : les trois axes du relevé --- */
+  const AX = 1.30;
+  const axes = [
+    { a: pt(0,SOL-.30,0), b: pt(AX,SOL-.30,0), lab:'X' },
+    { a: pt(0,SOL-.30,0), b: pt(0,SOL-.30+AX,0), lab:'Y' },
+    { a: pt(0,SOL-.30,0), b: pt(0,SOL-.30,AX), lab:'Z' }
+  ];
+  // graduations sur chaque axe
+  const gradAxes = [];
+  for(const [i,d] of [[0,[1,0,0]],[1,[0,1,0]],[2,[0,0,1]]]){
+    for(let k=1;k<=6;k++){
+      const t=AX*k/6, e=(k%3?.035:.075);
+      gradAxes.push([
+        pt(d[0]*t, SOL-.30+d[1]*t, d[2]*t),
+        pt(d[0]*t + (d[0]?0:e), SOL-.30+d[1]*t + (d[1]?0:e*.6), d[2]*t + (d[2]?0:0))
+      ]);
+    }
+  }
+
+  /* --- Éclats prismatiques : petits fragments qui accrochent la lumière --- */
+  const eclats = [];
+  for(let i=0;i<5;i++){
+    const t = alea()*Math.PI*2, r = 1.05 + alea()*1.05;
+    const y = SOL + .25 + alea()*1.6;
+    eclats.push({ p:[Math.cos(t)*r, y, Math.sin(t)*r],
+                  l: 12 + alea()*26, ang: alea()*Math.PI, ph: alea()*6.28 });
+  }
+
   /* --- Trame de sol --- */
   const G = 2.5, N = 9;
   for(let i = 0; i <= N; i++){
@@ -127,9 +155,29 @@ function holo(hote, graine){
   /* --- Couronne graduée : lecture d'azimut en degrés --- */
   const couronne = [];
   for(let d = 0; d < 360; d += 5){
-    const t = d * Math.PI/180, r = 1.92;
+    const t = d * Math.PI/180, r = 1.66;
     couronne.push({ deg:d, p:[Math.cos(t)*r, SOL-.30, Math.sin(t)*r],
                     q:[Math.cos(t)*(r + (d%45 ? .05 : .13)), SOL-.30, Math.sin(t)*(r + (d%45 ? .05 : .13))] });
+  }
+
+  /* --- Arcs spéculaires : portions d'anneau éclairées --- */
+  const arcs = [];
+  for(let i=0;i<4;i++){
+    const r    = 1.15 + alea()*.85;
+    const incl = alea()*1.5;
+    const axe  = alea() < .5 ? 'x' : 'z';
+    const d0   = alea()*Math.PI*2;
+    const arc  = .5 + alea()*1.5;          // longueur angulaire
+    const pts  = [];
+    for(let k=0;k<=40;k++){
+      const t = d0 + arc*k/40;
+      let q = [Math.cos(t)*r, 0, Math.sin(t)*r];
+      const c=Math.cos(incl), si=Math.sin(incl);
+      q = axe==='x' ? [q[0], q[1]*c-q[2]*si, q[1]*si+q[2]*c]
+                    : [q[0]*c-q[1]*si, q[0]*si+q[1]*c, q[2]];
+      pts.push([q[0], q[1]+SOL+1.0, q[2]]);
+    }
+    arcs.push({ pts, ph: alea()*6.28, v: .0004 + alea()*.0009 });
   }
 
   /* =========================================================
@@ -152,8 +200,8 @@ function holo(hote, graine){
     const cb = Math.cos(tilt), sb = Math.sin(tilt);
     const yy = p[1]*cb - z*sb, zz = p[1]*sb + z*cb;
     const f = 3.4 / (3.4 + zz + 5.0);
-    const e = Math.min(L,H) * .52;
-    return [L/2 + x*f*e, H/2 - yy*f*e + H*.14, zz];
+    const e = Math.min(L,H) * .55;
+    return [L/2 + x*f*e, H/2 - yy*f*e + H*.03, zz];
   };
 
   /* =========================================================
@@ -215,10 +263,15 @@ function holo(hote, graine){
     const ab = q => [L/2 + (q[0]-L/2)*k, H/2 + (q[1]-H/2)*k, q[2]];
     const pts = P.map(p => ab(proj(p)));
 
-    // Deux bandes de profondeur : le lointain est flouté.
+    // Trois bandes : net à la distance de mise au point, flou
+    // au-delà ET en deçà. Le flou étale l'énergie du trait, donc
+    // on compense l'épaisseur et l'opacité, sinon la ligne ne
+    // devient pas floue, elle disparaît.
     const bandes = flouActif()
-      ? [{ min: .15, blur:'blur(1.7px)' }, { min:-99, max:.15, blur:'none' }]
-      : [{ min:-99, blur:'none' }];
+      ? [{ min: .95,             blur:'blur(2.4px)', ep:2.6, op:2.1 },
+         { min:-99,   max:-.55,  blur:'blur(1.5px)', ep:2.0, op:1.8 },
+         { min:-.55,  max:.95,   blur:'none',        ep:1,   op:1   }]
+      : [{ min:-99, blur:'none', ep:1, op:1 }];
 
     const dansBande = (a,b,bd) => {
       const z = (pts[a][2] + pts[b][2]) / 2;
@@ -226,7 +279,8 @@ function holo(hote, graine){
     };
 
     const lot = (couche, alpha, lw, bd, dash) => {
-      ctx.globalAlpha = alpha; ctx.lineWidth = lw;
+      ctx.globalAlpha = Math.min(1, alpha * (bd.op || 1));
+      ctx.lineWidth = lw * (bd.ep || 1);
       if(dash){ ctx.setLineDash(dash); ctx.lineDashOffset = -temps * .02; }
       else ctx.setLineDash([]);
       ctx.beginPath();
@@ -282,6 +336,68 @@ function holo(hote, graine){
       ctx.fillText(String(g.deg).padStart(3,'0'), a2[0]+3, a2[1]-3);
     }
 
+    // ---- Gnomon XYZ ------------------------------------------
+    ctx.globalAlpha = .40; ctx.lineWidth = .9; ctx.setLineDash([]);
+    ctx.beginPath();
+    for(const ax of axes){
+      ctx.moveTo(pts[ax.a][0], pts[ax.a][1]);
+      ctx.lineTo(pts[ax.b][0], pts[ax.b][1]);
+    }
+    for(const [a,b] of gradAxes){
+      ctx.moveTo(pts[a][0], pts[a][1]); ctx.lineTo(pts[b][0], pts[b][1]);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = .62;
+    ctx.font = '11px ui-monospace, monospace';
+    for(const ax of axes){
+      const q = pts[ax.b];
+      ctx.fillText(ax.lab, q[0] + 6, q[1] - 5);
+    }
+
+    // ---- Arcs spéculaires : l'élément qui accroche l'œil -------
+    // Le décalage des canaux y est volontairement exagéré : c'est
+    // sur les hautes lumières que l'aberration se voit le plus.
+    const kSpec = 1 + (k - 1) * 3.4;
+    const abS = q => [L/2 + (q[0]-L/2)*kSpec, H/2 + (q[1]-H/2)*kSpec];
+    ctx.lineCap = 'round';
+    for(const arc of arcs){
+      const ph = (temps * arc.v + arc.ph) % 1;      // la lumière glisse
+      const n  = arc.pts.length;
+      const i0 = Math.floor(ph * n);
+      const len = 13;
+      for(let j = 0; j < len; j++){
+        const i = (i0 + j) % (n - 1);
+        const a = abS(proj(arc.pts[i])), b = abS(proj(arc.pts[i+1]));
+        const g = Math.sin(j / len * Math.PI);       // fondu aux extrémités
+        ctx.globalAlpha = .95 * g;
+        ctx.lineWidth = .8 + 2.1 * g;
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+        ctx.stroke();
+      }
+      // le reste de l'arc, à peine visible
+      ctx.globalAlpha = .13; ctx.lineWidth = .5;
+      ctx.beginPath();
+      arc.pts.forEach((p,i) => {
+        const q = ab(proj(p));
+        i ? ctx.lineTo(q[0],q[1]) : ctx.moveTo(q[0],q[1]);
+      });
+      ctx.stroke();
+    }
+
+    // ---- Éclats prismatiques ----------------------------------
+    for(const e of eclats){
+      const q = abS(proj(e.p));
+      const g = .35 + .65 * Math.abs(Math.sin(temps * .0011 + e.ph));
+      ctx.globalAlpha = .9 * g;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(q[0] - Math.cos(e.ang)*e.l/2, q[1] - Math.sin(e.ang)*e.l/2);
+      ctx.lineTo(q[0] + Math.cos(e.ang)*e.l/2, q[1] + Math.sin(e.ang)*e.l/2);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+
     // ---- Ancres : réagissent à l'orientation, et clignotent ----
     ctx.font = '9px ui-monospace, monospace';
     for(const an of ancres){
@@ -301,16 +417,14 @@ function holo(hote, graine){
       ctx.stroke();
 
       if(!cachee){
-        // Trait de rappel puis cote, avec azimut courant
-        const az = ((an.n*61 + angle*57.2958) % 360).toFixed(1).padStart(5,'0');
-        const cote = (x > L*.62) ? -1 : 1;      // rappel vers l'intérieur
-        ctx.beginPath();
-        ctx.moveTo(x + cote*s, y-s);
-        ctx.lineTo(x + cote*(s+14), y-s-10);
-        ctx.lineTo(x + cote*(s+78), y-s-10);
-        ctx.stroke();
-        const lib = `P${String(an.n).padStart(2,'0')} · ${an.h.toFixed(1)}m · AZ ${az}`;
-        ctx.fillText(lib, cote > 0 ? x+s+16 : x-s-76, y-s-13);
+        // Relevé en coordonnées écran normalisées, comme une station
+        // de poursuite : la valeur change à chaque image.
+        const X = (x/L).toFixed(2), Y = (y/H).toFixed(2);
+        const Z = (1 - (q[2]+2.6)/5.2).toFixed(2);
+        const etat = bat > .82 ? 'VERROU' : 'SUIVI';
+        ctx.globalAlpha = .30 + .34*bat;
+        ctx.fillText(`P${String(an.n).padStart(2,'0')} · X${X} Y${Y} Z${Z} · ${etat}`,
+                     x - 4, y - s - 7);
       }
     }
 

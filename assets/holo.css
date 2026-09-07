@@ -67,13 +67,13 @@ body::before{
 .vignettage{
   position:fixed;inset:0;z-index:5;pointer-events:none;
   background:
-    radial-gradient(58% 46% at 50% 44%,
-      transparent 0%, rgba(3,8,15,.30) 52%,
-      rgba(3,8,15,.78) 80%, rgba(3,8,15,.97) 100%),
-    radial-gradient(90% 70% at 0% 0%,   rgba(3,8,15,.85), transparent 46%),
-    radial-gradient(90% 70% at 100% 0%, rgba(3,8,15,.85), transparent 46%),
-    radial-gradient(90% 70% at 0% 100%, rgba(3,8,15,.85), transparent 46%),
-    radial-gradient(90% 70% at 100% 100%, rgba(3,8,15,.85), transparent 46%);
+    radial-gradient(52% 42% at 50% 46%,
+      transparent 0%, rgba(3,8,15,.42) 56%,
+      rgba(3,8,15,.88) 82%, rgba(3,8,15,1) 100%),
+    radial-gradient(62% 58% at 0% 0%,    rgba(3,8,15,.96), transparent 60%),
+    radial-gradient(62% 58% at 100% 0%,  rgba(3,8,15,.96), transparent 60%),
+    radial-gradient(62% 58% at 0% 100%,  rgba(3,8,15,.96), transparent 60%),
+    radial-gradient(62% 58% at 100% 100%,rgba(3,8,15,.96), transparent 60%);
 }
 
 /* Instabilité de projecteur : un très léger flottement d'ensemble */
@@ -82,6 +82,16 @@ body::before{
   0%,100%{transform:translate(0,0)}
   30%    {transform:translate(.6px,-.4px)}
   62%    {transform:translate(-.5px,.5px)}
+}
+
+/* Lueur centrale. Un vignettage sur fond déjà noir ne se voit pas :
+   il faut que le centre soit légèrement éclairé pour que les angles
+   existent par contraste. */
+.lueur{
+  position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(46% 42% at 50% 47%,
+    rgba(30,95,168,.20) 0%, rgba(30,95,168,.09) 42%,
+    rgba(56,188,216,.035) 66%, transparent 82%);
 }
 
 /* Grain argentique. La texture déborde de l'écran et se déplace par
