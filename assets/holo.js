@@ -40,171 +40,216 @@ function holo(hote, graine){
   const quad = (c,a,b,d,e) => { sg(c,a,b); sg(c,b,d); sg(c,d,e); sg(c,e,a); };
 
   /* ---------------------------------------------------------
-     Tour à couture spiralée.
+     Tour-machine à deux lames.
 
-     Trois traits relevés sur la référence :
-       - une jupe évasée en pied, faite de plateaux cascadants
-       - une couture en spirale qui sépare deux peaux : verre lisse
-         tendu en verticales d'un côté, ailettes horizontales serrées
-         de l'autre
-       - un sommet tranché en biais, ouvert, plus haut d'un côté
+     Vocabulaire relevé : deux lames verticales à angles coupés,
+     séparées par un canyon qui laisse voir la machinerie ; un
+     exosquelette de cadres épais ; des néons continus le long des
+     arêtes ; un socle en terrasses avec escalators et pavillons.
+     Tout est anguleux, rien n'est courbe.
      --------------------------------------------------------- */
   const SOL = -1.15;
-  const lumieres = [];
+  const lumieres = [], neons = [];
 
-  const NP = 44, NIV = 54, HT = 2.70;
-  const VRILLE = .62;                 // le fût pivote doucement
-  const COUTURE0 = 1.15, COUTURE = 4.2;   // la couture fait ~2/3 de tour
-
-  // Profil : le fût est presque droit. L'évasement décroît en
-  // exp(-24t), il n'agit donc plus du tout au-delà du dixième
-  // inférieur. Avec exp(-13t) il agissait encore à mi-hauteur et
-  // fabriquait une trompette.
-  const profil = (t) => (1 + 1.05 * Math.exp(-t * 24)) * (1 - .28*t + .07*t*t*t);
-
-  // Sommet tranché en biais : la hauteur maximale dépend de l'azimut.
-  const coupe = (th) => 1 - .30 * (1 + Math.cos(th - .55)) * .5;
-
-  const RX = .295, RZ = .225;
-  const pointFut = (t, th) => {
-    const k = profil(t), rot = t*VRILLE;
-    const x = Math.cos(th)*RX*k, z = Math.sin(th)*RZ*k;
-    return [x*Math.cos(rot) - z*Math.sin(rot),
-            SOL + t*HT,
-            x*Math.sin(rot) + z*Math.cos(rot)];
+  // Plan octogonal : un rectangle dont les quatre angles sont coupés.
+  const octo = (cx, cz, lx, lz, ch) => [
+    [cx-lx+ch, cz-lz], [cx+lx-ch, cz-lz], [cx+lx, cz-lz+ch], [cx+lx, cz+lz-ch],
+    [cx+lx-ch, cz+lz], [cx-lx+ch, cz+lz], [cx-lx, cz+lz-ch], [cx-lx, cz-lz+ch]
+  ];
+  const contour = (pl, y) => pl.map(([x,z]) => pt(x, y, z));
+  const fermer = (idx, couche) => {
+    for(let i = 0; i < idx.length; i++) sg(couche, idx[i], idx[(i+1)%idx.length]);
+  };
+  const boite = (cx, cy, cz, lx, ly, lz, couche) => {
+    const b = [], h = [];
+    for(const [sx,sz] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
+      b.push(pt(cx+sx*lx, cy-ly, cz+sz*lz));
+      h.push(pt(cx+sx*lx, cy+ly, cz+sz*lz));
+    }
+    fermer(b, couche); fermer(h, couche);
+    for(let i = 0; i < 4; i++) sg(couche, b[i], h[i]);
+    return { b, h };
   };
 
-  // Un point appartient-il à la peau à ailettes ou à la peau lisse ?
-  const cotéAilettes = (t, j2) => {
-    const th = j2/NP * Math.PI*2;
-    let d = (th - (COUTURE0 + t*COUTURE)) % (Math.PI*2);
-    if(d < 0) d += Math.PI*2;
-    return d < Math.PI;
-  };
+  /* ================= LES DEUX LAMES ================= */
+  const HB = SOL + .34, NN = 34, PAS = .066;
+  const lames = [
+    { cx:-.345, cz:-.02, lx:.185, lz:.25, ch:.075, n:NN,     nom:'A' },
+    { cx: .345, cz: .05, lx:.165, lz:.22, ch:.065, n:NN-4,   nom:'B' }
+  ];
 
-  const niveaux = [];
-  for(let i = 0; i <= NIV; i++){
-    const t = i/NIV, ligne = [];
-    for(let j2 = 0; j2 < NP; j2++){
-      const th = j2/NP * Math.PI*2;
-      ligne.push(t <= coupe(th) ? pt(...pointFut(t, th)) : -1);
-    }
-    niveaux.push({ ligne, t });
-  }
+  for(const L of lames){
+    const pl = octo(L.cx, L.cz, L.lx, L.lz, L.ch);
+    const niv = [];
+    for(let i = 0; i <= L.n; i++) niv.push(contour(pl, HB + i*PAS));
+    L.niv = niv;
 
-  // --- Peau à ailettes : un trait horizontal à CHAQUE niveau ---
-  // C'est cette densité qui fait la surface striée de la référence.
-  for(const n of niveaux){
-    for(let j2 = 0; j2 < NP; j2++){
-      const a = n.ligne[j2], b = n.ligne[(j2+1)%NP];
-      if(a < 0 || b < 0) continue;
-      const jupe = n.t < .12;                 // la jupe est striée partout
-      if(jupe || cotéAilettes(n.t, j2))
-        sg(dalles, a, b);
-    }
-  }
+    // Planchers : trait marqué à chaque niveau
+    for(const n of niv) fermer(n, dalles);
+    // Montants d'angle continus
+    for(let k = 0; k < 8; k++)
+      for(let i = 0; i < L.n; i++) sg(porteur, niv[i][k], niv[i+1][k]);
 
-  // --- Peau lisse : verticales tendues, et seulement quelques
-  //     horizontales de rappel ---
-  for(let i = 0; i < NIV; i++){
-    const n = niveaux[i], h = niveaux[i+1];
-    for(let j2 = 0; j2 < NP; j2++){
-      const a = n.ligne[j2], b = h.ligne[j2];
-      if(a < 0 || b < 0) continue;
-      if(n.t >= .12 && !cotéAilettes(n.t, j2) && j2 % 2 === 0) sg(resille, a, b);
+    // Trumeaux : subdivision fine de chaque façade
+    for(let i = 0; i < L.n; i++)
+      for(let k = 0; k < 8; k++){
+        const A = P[niv[i][k]], B = P[niv[i][(k+1)%8]];
+        for(let w = 1; w < 3; w++){
+          const t = w/3;
+          sg(resille, pt(A[0]+(B[0]-A[0])*t, P[niv[i][k]][1],   A[2]+(B[2]-A[2])*t),
+                      pt(A[0]+(B[0]-A[0])*t, P[niv[i+1][k]][1], A[2]+(B[2]-A[2])*t));
+        }
+      }
+
+    // Exosquelette : cadre épais tous les cinq niveaux, en saillie
+    for(let i = 0; i <= L.n - 5; i += 5){
+      const dep = .038;
+      const ext = octo(L.cx, L.cz, L.lx+dep, L.lz+dep, L.ch+dep*.6);
+      const c0 = contour(ext, HB + i*PAS - .012);
+      const c1 = contour(ext, HB + (i+5)*PAS + .012);
+      fermer(c0, porteur); fermer(c1, porteur);
+      for(let k = 0; k < 8; k++){
+        sg(porteur, c0[k], c1[k]);
+        sg(resille, c0[k], niv[i][k]);
+        sg(resille, c1[k], niv[Math.min(i+5, L.n)][k]);
+      }
+      // néon horizontal sur la corniche du cadre
+      neons.push(c1.concat([c1[0]]).map(k2 => P[k2]));
     }
-    if(i % 9 === 0){
-      for(let j2 = 0; j2 < NP; j2++){
-        const a = n.ligne[j2], b = n.ligne[(j2+1)%NP];
-        if(a >= 0 && b >= 0 && !cotéAilettes(n.t, j2)) sg(resille, a, b);
+
+    // Néons verticaux sur deux arêtes coupées
+    for(const k of [2, 6]){
+      const fil = [];
+      for(let i = 0; i <= L.n; i++) fil.push(P[niv[i][k]]);
+      neons.push(fil);
+    }
+
+    // Greebles : panneaux, caissons et bouches d'aération
+    for(let i = 2; i < L.n - 1; i++){
+      if((i*7 + (L.nom === 'A' ? 0 : 3)) % 4) continue;
+      for(const k of [0, 3, 4, 7]){
+        if(((i + k) * 5) % 3) continue;
+        const A = P[niv[i][k]], B = P[niv[i][(k+1)%8]];
+        const t = .28 + ((i*k) % 4) * .12;
+        const cx2 = A[0]+(B[0]-A[0])*t, cz2 = A[2]+(B[2]-A[2])*t;
+        const nx = (B[2]-A[2]), nz = -(B[0]-A[0]);
+        const ln = Math.hypot(nx, nz) || 1;
+        boite(cx2 + nx/ln*.018, P[niv[i][k]][1] + PAS*.5, cz2 + nz/ln*.018,
+              .026, PAS*.34, .026, resille);
+        if((i*3 + k) % 5 === 0)
+          lumieres.push([cx2 + nx/ln*.03, P[niv[i][k]][1] + PAS*.5, cz2 + nz/ln*.03]);
       }
     }
   }
 
-  // --- La couture, arête maîtresse : un trait fort en spirale ---
-  const couture = [];
-  for(let i = 0; i <= NIV; i++){
-    const t = i/NIV, th = COUTURE0 + t*COUTURE;
-    if(t > coupe(th)) continue;
-    couture.push(pt(...pointFut(t, th)));
-  }
-  for(let i = 0; i + 1 < couture.length; i++) sg(porteur, couture[i], couture[i+1]);
-  // Couture opposée, celle qui referme la peau lisse
-  const couture2 = [];
-  for(let i = 0; i <= NIV; i++){
-    const t = i/NIV, th = COUTURE0 + t*COUTURE + Math.PI;
-    if(t > coupe(th)) continue;
-    couture2.push(pt(...pointFut(t, th)));
-  }
-  for(let i = 0; i + 1 < couture2.length; i++) sg(porteur, couture2[i], couture2[i+1]);
-
-  // --- Lèvre du sommet : le tranchant oblique de l'ouverture ---
-  const levre = [];
-  for(let j2 = 0; j2 < NP; j2++){
-    const th = j2/NP * Math.PI*2;
-    levre.push(pt(...pointFut(coupe(th), th)));
-  }
-  for(let j2 = 0; j2 < NP; j2++) sg(porteur, levre[j2], levre[(j2+1)%NP]);
-  // Doublure intérieure : l'ouverture est un tube, pas un disque
-  for(let j2 = 0; j2 < NP; j2++){
-    const th = j2/NP * Math.PI*2;
-    const p = pointFut(coupe(th) - .07, th);
-    const q = pt(p[0]*.86, p[1], p[2]*.86);
-    if(j2 % 2 === 0) sg(resille, levre[j2], q);
-  }
-
-  /* ---- Jupe : plateaux cascadants qui débordent au sol ---- */
-  // Six plateaux seulement, débordant au plus de 85 %. La version
-  // précédente montait à 285 % avec une ondulation en plus : elle
-  // écrasait la tour au lieu de l'asseoir.
-  const jupe = [];
-  for(let k = 0; k < 6; k++){
-    const y = SOL - .015 - k*.048;
-    const g = 1.06 + k*.135;
-    const p = [];
-    for(let j2 = 0; j2 < NP; j2++){
-      const th = j2/NP*Math.PI*2;
-      const et = 1 + .10*Math.cos(th*2 + .7);      // à peine ovalisé
-      p.push(pt(Math.cos(th)*RX*profil(0)*g*et,
-                y,
-                Math.sin(th)*RZ*profil(0)*g*et*1.18));
+  /* ================= LE CANYON ================= */
+  // Entre les deux lames, la machinerie est à nu.
+  const CX0 = -.13, CX1 = .155, CZ = .16;
+  for(let i = 3; i < NN - 3; i++){
+    const y = HB + i*PAS;
+    // planchers traversants, en retrait
+    const q = [ pt(CX0, y, -CZ), pt(CX1, y, -CZ), pt(CX1, y, CZ), pt(CX0, y, CZ) ];
+    fermer(q, dalles);
+    // gaines verticales
+    if(i % 3 === 0)
+      for(const x of [CX0 + .06, CX1 - .07])
+        boite(x, y + PAS, ((i*13) % 7 - 3) * .035, .028, PAS, .028, resille);
+    // passerelles en travers, une fois sur quatre
+    if(i % 4 === 1){
+      const a = pt(CX0, y + .012, ((i*5) % 5 - 2) * .05);
+      const b = pt(CX1, y + .012, ((i*5) % 5 - 2) * .05 + .05);
+      sg(porteur, a, b);
+      sg(resille, pt(P[a][0], P[a][1] + .05, P[a][2]), pt(P[b][0], P[b][1] + .05, P[b][2]));
+      lumieres.push([(P[a][0]+P[b][0])/2, P[a][1] + .02, (P[a][2]+P[b][2])/2]);
     }
-    for(let j2 = 0; j2 < NP; j2++) sg(dalles, p[j2], p[(j2+1)%NP]);
-    if(k) for(let j2 = 0; j2 < NP; j2 += 3) sg(resille, jupe[k-1][j2], p[j2]);
-    jupe.push(p);
+    if(i % 6 === 2) lumieres.push([(CX0+CX1)/2, y, 0]);
   }
-
-  /* ---- Entrée : évidement éclairé sous la jupe ---- */
-  for(let j2 = 19; j2 <= 26; j2++){
-    const a = P[jupe[5][j2]];
-    sg(porteur, jupe[5][j2], pt(a[0], SOL - .34, a[2]));
-    if(j2 % 2 === 0) lumieres.push([a[0]*.96, SOL - .22, a[2]*.96]);
-  }
-  for(let j2 = 19; j2 < 26; j2++)
-    sg(resille, pt(P[jupe[5][j2]][0], SOL - .34, P[jupe[5][j2]][2]),
-                pt(P[jupe[5][j2+1]][0], SOL - .34, P[jupe[5][j2+1]][2]));
-
-  /* ---- Baies éclairées, semées sur la peau à ailettes ---- */
-  for(let i = 5; i < NIV; i += 4)
-    for(let j2 = 0; j2 < NP; j2 += 5){
-      if(!cotéAilettes(i/NIV, j2)) continue;
-      const a = niveaux[i].ligne[j2];
-      if(a >= 0) lumieres.push([P[a][0]*1.005, P[a][1], P[a][2]*1.005]);
+  // Deux mâts d'ascenseur dans le canyon
+  for(const x of [CX0 + .02, CX1 - .02]){
+    const b = [], h = [];
+    for(const [sx,sz] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
+      b.push(pt(x + sx*.025, HB, sz*.025 + .09));
+      h.push(pt(x + sx*.025, HB + (NN-3)*PAS, sz*.025 + .09));
     }
+    fermer(b, porteur); fermer(h, porteur);
+    for(let k = 0; k < 4; k++) sg(porteur, b[k], h[k]);
+    for(let i = 0; i < NN - 3; i += 2)
+      fermer(contour([[P[b[0]][0],P[b[0]][2]],[P[b[1]][0],P[b[1]][2]],
+                      [P[b[2]][0],P[b[2]][2]],[P[b[3]][0],P[b[3]][2]]],
+                     HB + i*PAS), resille);
+  }
 
-  /* ---- Arêtes lumineuses : les deux coutures ---- */
-  const filsLumiere = [couture.map(k => P[k]), couture2.map(k => P[k])];
+  /* ================= LE SOCLE EN TERRASSES ================= */
+  const terrasses = [];
+  for(let k = 0; k < 4; k++){
+    const y = SOL + k*.105;
+    const g = 1 - k*.13;
+    const pl = octo(.02, .04, 1.02*g, .78*g, .20*g);
+    const c = contour(pl, y);
+    fermer(c, dalles);
+    // garde-corps
+    const gc = contour(octo(.02, .04, 1.02*g - .03, .78*g - .03, .20*g), y + .045);
+    fermer(gc, resille);
+    for(let m = 0; m < 8; m++) sg(resille, c[m], gc[m]);
+    if(k) for(let m = 0; m < 8; m++) sg(porteur, terrasses[k-1][m], c[m]);
+    terrasses.push(c);
+    // néon de nez de dalle
+    neons.push(c.concat([c[0]]).map(m => P[m]));
+    // pavillons posés sur la terrasse
+    for(let p2 = 0; p2 < 3; p2++){
+      const an = (k*1.7 + p2*2.3), r = .74*g;
+      const px = .02 + Math.cos(an)*r, pz = .04 + Math.sin(an)*r*.76;
+      if(Math.abs(px) < .62 && Math.abs(pz) < .42) continue;
+      boite(px, y + .075, pz, .085, .055, .07, resille);
+      lumieres.push([px, y + .075, pz]);
+    }
+  }
 
-  const feux = [ P[levre[Math.round(NP*.15)]], P[levre[Math.round(NP*.65)]] ]
-                 .map(p => [p[0], p[1], p[2]]);
+  /* ---- Escalators : rampes obliques avec leurs marches ---- */
+  for(const [x0, z0, x1, z1, y0, y1] of [
+        [-.72, .62, -.30, .30, SOL + .02, SOL + .40],
+        [ .58, .58,  .22, .28, SOL + .02, SOL + .40],
+        [-.34, .40, -.20, .12, SOL + .40, HB]]){
+    const a = pt(x0, y0, z0), b = pt(x1, y1, z1);
+    const a2 = pt(x0 + .10, y0, z0 + .06), b2 = pt(x1 + .10, y1, z1 + .06);
+    sg(porteur, a, b); sg(porteur, a2, b2);
+    for(let m = 0; m <= 12; m++){
+      const t = m/12;
+      const u = pt(x0+(x1-x0)*t, y0+(y1-y0)*t, z0+(z1-z0)*t);
+      const v = pt(x0+.10+(x1-x0)*t, y0+(y1-y0)*t, z0+.06+(z1-z0)*t);
+      sg(resille, u, v);
+      if(m % 4 === 0) sg(resille, u, pt(P[u][0], P[u][1] + .07, P[u][2]));
+    }
+    lumieres.push([(x0+x1)/2 + .05, (y0+y1)/2 + .02, (z0+z1)/2 + .03]);
+  }
+
+  /* ---- Couronnement : casquettes en porte-à-faux, pas de toiture ---- */
+  for(const L of lames){
+    const haut = L.niv[L.n];
+    const dep = .10;
+    const cap = contour(octo(L.cx + .04, L.cz, L.lx+dep, L.lz+dep*.5, L.ch), 
+                        HB + L.n*PAS + .07);
+    fermer(cap, porteur);
+    for(let k = 0; k < 8; k++){ sg(resille, haut[k], cap[k]); }
+    neons.push(cap.concat([cap[0]]).map(k => P[k]));
+    for(let k = 0; k < 8; k += 2) boite(P[cap[k]][0]*.92, HB + L.n*PAS + .14,
+                                        P[cap[k]][2]*.92, .03, .05, .03, resille);
+  }
+
+  const feux = lames.map(L => {
+    const p = P[L.niv[L.n][0]];
+    return [p[0], p[1] + .16, p[2]];
+  });
+
+  const filsLumiere = neons;
 
   /* ---- Ancres ---- */
-  const REMARQUABLES = [ niveaux[3].ligne[8], niveaux[13].ligne[22],
-                         niveaux[26].ligne[36], niveaux[40].ligne[12],
-                         couture[Math.floor(couture.length*.55)], levre[6] ];
+  const REMARQUABLES = [
+    lames[0].niv[4][0], lames[0].niv[16][3], lames[0].niv[NN][5],
+    lames[1].niv[9][6], lames[1].niv[NN-4][2], terrasses[3][1] ];
   for(let i = 0; i < REMARQUABLES.length; i++)
     ancres.push({ idx: REMARQUABLES[i], phase: alea()*6.28, n: i+1,
-                  h: (P[REMARQUABLES[i]][1] - SOL) * 96 });
+                  h: (P[REMARQUABLES[i]][1] - SOL) * 88 });
 
   /* --- Gnomon : les trois axes du relevé --- */
   const AX = 1.30;
