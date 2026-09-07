@@ -646,19 +646,8 @@ function holo(hote, graine){
         S.push({ a: arc.pts[i], b: arc.pts[(i+1) % n], w:.8, al:.10 });
     }
 
-    // Réticules des ancres
-    for(const an of ancres){
-      const q = proj(P[an.idx]);
-      const cachee = q[2] > .28;
-      const bat = .55 + .45*Math.sin(temps*.004 + an.phase);
-      an.vis = !cachee; an.bat = bat; an.ecran = q;
-      const p = P[an.idx], s = (cachee ? .035 : .055);
-      const al = cachee ? .14 : .34 + .30*bat;
-      for(const [sx, sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){
-        S.push({ a:[p[0]+sx*s, p[1]+sy*s, p[2]], b:[p[0]+sx*s*.42, p[1]+sy*s, p[2]], w:1.1, al });
-        S.push({ a:[p[0]+sx*s, p[1]+sy*s, p[2]], b:[p[0]+sx*s, p[1]+sy*s*.42, p[2]], w:1.1, al });
-      }
-    }
+    // Les réticules ne sont plus ici : ils passent sur le calque 2D,
+    // dans leur propre couleur, et restent nets.
 
     // Éclats prismatiques
     for(const e of eclats){
@@ -672,34 +661,99 @@ function holo(hote, graine){
   };
 
   /* =========================================================
-     TEXTE
+     CALQUE DE RELEVÉ
+     Réticules, cotes et graduations chiffrées. Tout y est net et
+     dans sa propre teinte, pour ne pas se confondre avec l'objet.
      ========================================================= */
-  const dessineTexte = () => {
-    t2.clearRect(0, 0, L, H);
-    t2.fillStyle = 'rgba(210,216,224,1)';
-    t2.font = '9px ui-monospace, "SFMono-Regular", monospace';
+  const CYAN  = '56,188,216';    // Cyan léger, la couleur des données
+  const BLANC = '210,216,224';   // Blanc cassé, la couleur de l'objet
 
+  // Chaque ancre mémorise son accrochage : 0 relâchée, 1 verrouillée.
+  for(const an of ancres){ an.acq = 0; an.vis = false; }
+
+  const dessineTexte = (dt) => {
+    t2.clearRect(0, 0, L, H);
+    t2.lineWidth = 1;
+
+    // Graduations chiffrées de la couronne, très en retrait
+    t2.font = '9px ui-monospace, "SFMono-Regular", monospace';
+    t2.fillStyle = `rgba(${BLANC},1)`;
     for(const g of couronne){
       if(g.deg % 90) continue;
       const q = proj(g.q);
-      t2.globalAlpha = .34;
+      t2.globalAlpha = .26;
       t2.fillText(String(g.deg).padStart(3,'0'), q[0]+3, q[1]-3);
     }
+
+    // Lettres des axes
     t2.font = '11px ui-monospace, monospace';
+    t2.globalAlpha = .48;
     for(const ax of axes){
       const q = proj(P[ax.b]);
-      t2.globalAlpha = .60;
       t2.fillText(ax.lab, q[0]+6, q[1]-5);
     }
-    t2.font = '9px ui-monospace, monospace';
+
+    // ---- Ancres ----
+    t2.font = '9px ui-monospace, "SFMono-Regular", monospace';
     for(const an of ancres){
-      if(!an.vis || !an.ecran) continue;
-      const q = an.ecran;
-      const X = (q[0]/L).toFixed(2), Y = (q[1]/H).toFixed(2);
-      const Z = (1 - (q[2]+2.6)/5.2).toFixed(2);
-      t2.globalAlpha = .30 + .34*an.bat;
-      t2.fillText(`P${String(an.n).padStart(2,'0')} · X${X} Y${Y} Z${Z} · `
-                  + (an.bat > .82 ? 'VERROU' : 'SUIVI'), q[0] - 4, q[1] - 16);
+      const q = proj(P[an.idx]);
+      an.ecran = q;
+      const visible = q[2] <= .28;
+      an.vis = visible;
+
+      // Accrochage progressif : la cible se verrouille en un tiers de
+      // seconde, et se relâche un peu plus vite qu'elle ne s'accroche.
+      const cible = visible ? 1 : 0;
+      an.acq += (cible - an.acq) * Math.min(1, dt * (visible ? .009 : .014));
+      if(an.acq < .012) continue;
+
+      const bat = .5 + .5*Math.sin(temps*.0035 + an.phase);
+      const A0  = an.acq;
+
+      // Les crochets se resserrent en se verrouillant.
+      const s  = 11 * (1 + (1 - A0) * 1.9);
+      const br = 4.5;
+      const x = q[0], y = q[1];
+
+      t2.strokeStyle = `rgba(${CYAN},1)`;
+      t2.globalAlpha = A0 * (.34 + .30*bat);
+      t2.beginPath();
+      for(const [sx, sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){
+        t2.moveTo(x + sx*s, y + sy*s - sy*br);
+        t2.lineTo(x + sx*s, y + sy*s);
+        t2.lineTo(x + sx*s - sx*br, y + sy*s);
+      }
+      t2.stroke();
+
+      // Point de visée, seulement une fois verrouillé
+      if(A0 > .55){
+        t2.fillStyle = `rgba(${CYAN},1)`;
+        t2.globalAlpha = (A0 - .55)/.45 * (.30 + .55*bat);
+        t2.fillRect(x - 1, y - 1, 2, 2);
+      }
+
+      // Trait de rappel puis relevé, tracés de gauche à droite au
+      // rythme de l'accrochage.
+      const cote = (x > L*.66) ? -1 : 1;
+      const lg = 26 * A0;
+      t2.strokeStyle = `rgba(${CYAN},1)`;
+      t2.globalAlpha = A0 * .28;
+      t2.beginPath();
+      t2.moveTo(x + cote*s, y - s);
+      t2.lineTo(x + cote*(s + lg*.4), y - s - lg*.34);
+      t2.lineTo(x + cote*(s + lg),    y - s - lg*.34);
+      t2.stroke();
+
+      if(A0 > .7){
+        const X = (q[0]/L).toFixed(2), Y = (q[1]/H).toFixed(2);
+        const Z = (1 - (q[2]+2.6)/5.2).toFixed(2);
+        const etat = bat > .80 ? 'VERROU' : 'SUIVI';
+        const lib = `P${String(an.n).padStart(2,'0')} · X${X} Y${Y} Z${Z} · ${etat}`;
+        t2.fillStyle = `rgba(${CYAN},1)`;
+        t2.globalAlpha = (A0 - .7)/.3 * (.42 + .28*bat);
+        const lx = cote > 0 ? x + s + 30 : x - s - 30 - t2.measureText(lib).width;
+        t2.fillText(lib, lx, y - s - 12);
+      }
     }
     t2.globalAlpha = 1;
   };
@@ -712,6 +766,7 @@ function holo(hote, graine){
     gl.vertexAttribPointer(loc, taille, gl.FLOAT, false, FLOTS*4, decalage*4);
   };
 
+  let ecoule = 16, tPrec = 0;
   const rendu = () => {
     const W = L*DPR, Ht = H*DPR;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
@@ -769,11 +824,13 @@ function holo(hote, graine){
     gl.vertexAttribPointer(ap, 2, gl.FLOAT, false, 0, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    dessineTexte();
+    dessineTexte(ecoule);
   };
 
   const boucle = (t) => {
     if(!vivant) return;
+    ecoule = tPrec ? Math.min(80, t - tPrec) : 16;
+    tPrec = t;
     temps = t || 0;
     if(!tire && !lent){
       vitesse += (AUTO - vitesse) * .035;
