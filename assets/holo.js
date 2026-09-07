@@ -314,7 +314,7 @@ function holo(hote, graine){
   const t2 = tx.getContext('2d');
 
   const gl = cv.getContext('webgl', {
-    alpha: true, premultipliedAlpha: true, antialias: false, depth: true
+    alpha: true, premultipliedAlpha: true, antialias: false, depth: false
   });
   if(!gl){ console.warn('holo : WebGL indisponible'); return null; }
 
@@ -513,36 +513,8 @@ function holo(hote, graine){
       gl_FragColor = vec4(vec3(0.82, 0.85, 0.90) * a, a);
     }`;
 
-  /* ---------- Occulteur ----------
-     Un filaire n'a pas de surface : il n'y a rien derrière quoi
-     disparaître. On rend donc les FACES du modèle dans le seul
-     tampon de profondeur, sans écrire un pixel de couleur. Elles
-     sont invisibles mais elles masquent. */
-  const VS_OCC = `
-    precision highp float;
-    attribute vec3 aPos;
-    uniform vec2  uTaille;
-    uniform float uAngle, uTilt, uEch, uDecalY;
-    void main(){
-      float ca = cos(uAngle), sa = sin(uAngle);
-      float x  = aPos.x*ca - aPos.z*sa;
-      float z1 = aPos.x*sa + aPos.z*ca;
-      float cb = cos(uTilt), sb = sin(uTilt);
-      float y  = aPos.y*cb - z1*sb;
-      float zz = aPos.y*sb + z1*cb;
-      float f  = 9.0 / (9.0 + zz + 13.0);
-      vec2 p = vec2(uTaille.x*0.5 + x*f*uEch,
-                    uTaille.y*0.5 - y*f*uEch + uDecalY);
-      gl_Position = vec4(p.x / uTaille.x * 2.0 - 1.0,
-                         1.0 - p.y / uTaille.y * 2.0,
-                         clamp(zz / 8.0, -0.99, 0.99), 1.0);
-    }`;
-  const FS_OCC = `precision highp float;
-    void main(){ gl_FragColor = vec4(0.0); }`;
-
   const progTrait = lier(VS_TRAIT, FS_TRAIT);
   const progEtiq  = lier(VS_ETIQ, FS_ETIQ);
-  const progOcc   = lier(VS_OCC, FS_OCC);
   const progCA    = lier(VS_PLEIN, FS_CA);
 
   const A = {
@@ -641,24 +613,6 @@ function holo(hote, graine){
                   'uFocus','uDemi','uForce','uMaxCoC','uAtlas','uPix'])
     UE[n] = gl.getUniformLocation(progEtiq, n);
 
-  let bufOcc = null, nOcc = 0, AO = {}, UO = {};
-  if(typeof OCCULTEUR_01 !== 'undefined'){
-    const S3 = OCCULTEUR_01.s, T3 = OCCULTEUR_01.t;
-    const d = new Float32Array(T3.length * 3);
-    for(let i = 0; i < T3.length; i++){
-      d[i*3]   = S3[T3[i]*3];
-      d[i*3+1] = SOL + S3[T3[i]*3+1];
-      d[i*3+2] = S3[T3[i]*3+2];
-    }
-    bufOcc = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, bufOcc);
-    gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW);
-    nOcc = T3.length;
-    AO.aPos = gl.getAttribLocation(progOcc, 'aPos');
-    for(const n of ['uTaille','uAngle','uTilt','uEch','uDecalY'])
-      UO[n] = gl.getUniformLocation(progOcc, n);
-  }
-
   const bufPlein = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, bufPlein);
   gl.bufferData(gl.ARRAY_BUFFER,
@@ -689,10 +643,6 @@ function holo(hote, graine){
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
                             gl.TEXTURE_2D, texte, 0);
-    // Sans tampon de profondeur attaché au framebuffer, le test de
-    // profondeur n'a aucun effet lorsqu'on rend hors écran.
-    if(!globalThis.__rbz) globalThis.__rbz = gl.createRenderbuffer();
-    gl.bindRenderbuffer(gl.RENDERBUFFER, globalThis.__rbz);
     gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, L*DPR, H*DPR);
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT,
                                gl.RENDERBUFFER, globalThis.__rbz);
@@ -1064,39 +1014,16 @@ function holo(hote, graine){
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.viewport(0, 0, W, Ht);
     gl.clearColor(0, 0, 0, 0);
-    gl.clearDepth(1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-    /* Passe 1 : l'occulteur. Les faces du modèle remplissent le
-       tampon de profondeur sans écrire un seul pixel de couleur. */
-    if(bufOcc){
-      gl.enable(gl.DEPTH_TEST);
-      gl.depthFunc(gl.LESS);
-      gl.depthMask(true);
-      gl.colorMask(false, false, false, false);
-      gl.disable(gl.BLEND);
-      gl.useProgram(progOcc);
-      gl.uniform2f(UO.uTaille, L, H);
-      gl.uniform1f(UO.uAngle, angle);
-      gl.uniform1f(UO.uTilt, tilt);
-      gl.uniform1f(UO.uEch, ECH());
-      gl.uniform1f(UO.uDecalY, H*.03);
-      gl.bindBuffer(gl.ARRAY_BUFFER, bufOcc);
-      gl.enableVertexAttribArray(AO.aPos);
-      gl.vertexAttribPointer(AO.aPos, 3, gl.FLOAT, false, 0, 0);
-      gl.drawArrays(gl.TRIANGLES, 0, nOcc);
-      gl.colorMask(true, true, true, true);
-    }
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);          // additif, comme des lumières
 
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-    gl.depthMask(false);
-    /* Passe 2 : les étiquettes, testées contre l'occulteur.
-       Elles sont toujours dessinées ; le GPU rejette, pixel par
-       pixel, celles que le volume recouvre. ---- Les étiquettes, DANS la scène ----
+    /* ---- Les étiquettes ----
+       Aucun test de profondeur : elles sont visibles en permanence,
+       devant comme derrière. Elles restent dans la passe WebGL, ce
+       qui leur conserve le flou de profondeur et l'aberration
+       chromatique. ---- 
        Même tampon de profondeur que le bâtiment : le GPU décide seul,
        pixel par pixel, de ce qui passe devant. Elles sont toujours
        dessinées ; ce sont les traits du bâtiment situés devant elles
@@ -1123,12 +1050,9 @@ function holo(hote, graine){
     }
     gl.drawArrays(gl.TRIANGLES, 0, nEtiq);
 
-    /* Passe 3 : le bâtiment, SANS aucun test de profondeur. Les
-       milliers de traits doivent s'additionner librement ; leur faire
-       écrire la profondeur les faisait se masquer entre eux et
-       détruisait toute la matière du rendu. */
-    gl.disable(gl.DEPTH_TEST);
-    gl.depthMask(false);
+    /* Le bâtiment. Aucun test de profondeur : les milliers de traits
+       doivent s'additionner librement, sinon le volume perd toute sa
+       matière. */
     gl.useProgram(progTrait);
     gl.uniform2f(U.uTaille, L, H);
     gl.uniform1f(U.uAngle, angle);
@@ -1162,7 +1086,6 @@ function holo(hote, graine){
 
 
     // Aberration chromatique sur l'image entière
-    gl.disable(gl.DEPTH_TEST);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, W, Ht);
     gl.clearColor(0, 0, 0, 0);
