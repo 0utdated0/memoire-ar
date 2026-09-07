@@ -307,36 +307,16 @@ function holo(hote, graine){
   pousse(dalles,  .9, .17);
   pousse(porteur, .9, .30);
 
-  // Cercles d'instrument et leurs graduations
+  /* Les cercles d'instrument ne sont plus figés : chacun tourne
+     autour de son propre axe, à sa propre vitesse et dans son propre
+     sens. Ils passent donc dans la géométrie recalculée à chaque
+     image, plus dans la géométrie fixe. */
   const CI = [0, SOL + .95, 0];
-  for(const inst of instruments){
-    const n = inst.pts.length;
-    const i0 = inst.arc ? Math.floor(inst.arc[0]*n) : 0;
-    const i1 = inst.arc ? Math.floor(inst.arc[1]*n) : n;
-    for(let i = i0; i < i1; i++){
-      if(inst.dash && (i % 4) > 1) continue;      // pointillé figé
-      statiques.push({ a: inst.pts[i % n], b: inst.pts[(i+1) % n],
-                       w: .9, al: inst.al * 1.7, fam: 1 });
-    }
-    if(inst.ticks){
-      const pas = Math.max(1, Math.floor(n / inst.ticks));
-      for(let i = i0; i < i1; i += pas){
-        const p = inst.pts[i % n];
-        const g = ((i/pas) % 5 === 0) ? 1.075 : 1.032;
-        statiques.push({ a: p,
-          b: [CI[0] + (p[0]-CI[0])*g, CI[1] + (p[1]-CI[1])*g, CI[2] + (p[2]-CI[2])*g],
-          w: .9, al: inst.al * 1.4, fam: 1 });
-      }
-    }
-    if(inst.arc){
-      for(const i of [i0, i1 - 1]){
-        const p = inst.pts[i % n], g = 1.11;
-        statiques.push({ a: p,
-          b: [p[0]*g, (p[1]-CI[1])*g + CI[1], p[2]*g],
-          w: .9, al: inst.al * 2.4, fam: 1 });
-      }
-    }
-  }
+  instruments.forEach((inst, k) => {
+    inst.vit  = (k % 2 ? 1 : -1) * (.00007 + k * .000055);
+    inst.axeX = .35 + k * .27;          // inclinaison propre de l'axe
+    inst.ph   = k * 1.7;
+  });
 
   // Gnomon
   for(const ax of axes) statiques.push({ a:P[ax.a], b:P[ax.b], w: .9, al:.70, fam:1 });
@@ -755,6 +735,46 @@ function holo(hote, graine){
       }
     }
 
+    // Cercles d'instrument, chacun sur son axe et à sa vitesse
+    for(const inst of instruments){
+      const a2 = temps * inst.vit + inst.ph;
+      const ca = Math.cos(a2), sa = Math.sin(a2);
+      const cx2 = Math.cos(inst.axeX), sx2 = Math.sin(inst.axeX);
+      const tourne = (p) => {
+        const x = p[0] - CI[0], y = p[1] - CI[1], z = p[2] - CI[2];
+        // rotation propre autour de l'axe vertical du cercle
+        const X = x*ca - z*sa, Z = x*sa + z*ca;
+        // puis basculement de cet axe
+        return [CI[0] + X, CI[1] + y*cx2 - Z*sx2, CI[2] + y*sx2 + Z*cx2];
+      };
+      const n = inst.pts.length;
+      const i0 = inst.arc ? Math.floor(inst.arc[0]*n) : 0;
+      const i1 = inst.arc ? Math.floor(inst.arc[1]*n) : n;
+      for(let i = i0; i < i1; i++){
+        if(inst.dash && (i % 4) > 1) continue;
+        S.push({ a: tourne(inst.pts[i % n]), b: tourne(inst.pts[(i+1) % n]),
+                 w: .9, al: inst.al * 1.7, fam: 1 });
+      }
+      if(inst.ticks){
+        const pas = Math.max(1, Math.floor(n / inst.ticks));
+        for(let i = i0; i < i1; i += pas){
+          const p = inst.pts[i % n];
+          const g = ((i/pas) % 5 === 0) ? 1.075 : 1.032;
+          S.push({ a: tourne(p),
+            b: tourne([CI[0] + (p[0]-CI[0])*g, CI[1] + (p[1]-CI[1])*g, CI[2] + (p[2]-CI[2])*g]),
+            w: .9, al: inst.al * 1.4, fam: 1 });
+        }
+      }
+      if(inst.arc){
+        for(const i of [i0, i1 - 1]){
+          const p = inst.pts[i % n], g = 1.11;
+          S.push({ a: tourne(p),
+            b: tourne([p[0]*g, (p[1]-CI[1])*g + CI[1], p[2]*g]),
+            w: .9, al: inst.al * 2.4, fam: 1 });
+        }
+      }
+    }
+
     // Traits de rappel des étiquettes : de vrais segments du monde,
     // donc soumis au flou et à l'aberration comme tout le reste.
     for(const et of etiquettes){
@@ -777,7 +797,7 @@ function holo(hote, graine){
         const u = i/(n-1);
         const onde = Math.pow(Math.max(0, Math.sin(u*4.2 - temps*.0011 + k*2.1)), 3);
         S.push({ a: fil[i], b: fil[i+1],
-                 w: .9, al: .34 + 1.9*onde, fam: 2 });
+                 w: .9, al: .34 + 1.9*onde, fam: 0 });   // arêtes du bâtiment : blanches
       }
     }
 
@@ -790,7 +810,7 @@ function holo(hote, graine){
       if(!on) continue;
       const g = .35 + .65*c, e = .022;
       S.push({ a:[p[0]-e, p[1], p[2]], b:[p[0]+e, p[1], p[2]],
-               w: .9, al: .30 + 1.25*g, fam: 2 });
+               w: .9, al: .30 + 1.25*g, fam: 0 });      // fenêtres allumées : blanches
     }
 
     // Feux de balisage au sommet, battement lent et régulier
@@ -799,7 +819,7 @@ function holo(hote, graine){
       const b = Math.pow(Math.max(0, Math.sin(temps*.0016 + i*2.1)), 6);
       if(b < .02) continue;
       S.push({ a:[p[0]-.012, p[1], p[2]], b:[p[0]+.012, p[1], p[2]],
-               w: .9, al: .4 + 2.6*b, fam: 2 });
+               w: .9, al: .4 + 2.6*b, fam: 0 });        // feux de balisage : blancs
     }
 
     // Câbles, en pointillés qui défilent
