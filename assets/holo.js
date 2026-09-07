@@ -302,10 +302,10 @@ function holo(hote, graine){
      PROJECTION
      ========================================================= */
   /* Deux calques hors écran en définition réduite. Redessiné à
-     l'échelle 1, un calque à 45 % est légèrement flou, un calque à
-     16 % l'est beaucoup : c'est le rééchantillonnage qui fait le
+     l'échelle 1, un calque à 24 % est nettement flou, un calque à
+     4,5 % l'est énormément : c'est le rééchantillonnage qui fait le
      flou, sans aucun coût de tracé supplémentaire. */
-  const ECH = [.45, .16];
+  const ECH = [.24, .045];
   const bufs = ECH.map(() => {
     const c = document.createElement('canvas');
     return { c, x: c.getContext('2d') };
@@ -432,7 +432,7 @@ function holo(hote, graine){
       if(pts[i][2] > bMax) bMax = pts[i][2];
     }
     const zMid = (bMin + bMax) / 2;
-    const demi = Math.max(.35, (bMax - bMin) / 2);
+    const demi = Math.max(.22, (bMax - bMin) / 3.2);
 
     let zMin = 1e9, zMax = -1e9;
     for(const q of pts){ if(q[2] < zMin) zMin = q[2]; if(q[2] > zMax) zMax = q[2]; }
@@ -480,7 +480,7 @@ function holo(hote, graine){
         if(flou){
           const z = (pts[sgt[0]][2] + pts[sgt[1]][2]) / 2;
           const d = Math.min(2, Math.abs((z - zMid) / demi));
-          n = Math.min(1, d * d * .62);
+          n = Math.min(1, d * d * 1.45);
         }
         // deux cibles voisines au plus : net, doux, très flou
         const paires = n < .5 ? [[0, 1 - n*2], [1, n*2]]
