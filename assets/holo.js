@@ -308,19 +308,13 @@ function holo(hote, graine){
      de tout. Avec un calque DESSOUS, une étiquette située derrière
      est simplement recouverte par le filaire, comme n'importe quel
      objet de la scène. Elle reste allumée, elle passe derrière. */
-  const txB = document.createElement('canvas');   // derrière le bâtiment
-  txB.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:0';
-  hote.insertBefore(txB, cv);
-  const tB = txB.getContext('2d');
-  cv.style.zIndex = '1';
-
   const tx = document.createElement('canvas');    // devant le bâtiment
   tx.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:2';
   hote.appendChild(tx);
   const t2 = tx.getContext('2d');
 
   const gl = cv.getContext('webgl', {
-    alpha: true, premultipliedAlpha: true, antialias: false, depth: false
+    alpha: true, premultipliedAlpha: true, antialias: false, depth: true
   });
   if(!gl){ console.warn('holo : WebGL indisponible'); return null; }
 
@@ -405,8 +399,11 @@ function holo(hote, graine){
            : aStyle.z < 1.5 ? vec3(0.12, 0.37, 0.66)    // Bleu Blueprint
                             : vec3(0.22, 0.74, 0.85);   // Cyan léger
 
+      // La profondeur est désormais écrite dans le tampon : c'est
+      // elle qui décidera, pixel par pixel, de ce qui passe devant.
+      float zn = clamp(zz / 8.0, -0.99, 0.99);
       gl_Position = vec4(pos.x / uTaille.x * 2.0 - 1.0,
-                         1.0 - pos.y / uTaille.y * 2.0, 0.0, 1.0);
+                         1.0 - pos.y / uTaille.y * 2.0, zn, 1.0);
     }`;
 
   const FS_TRAIT = `
@@ -458,7 +455,69 @@ function holo(hote, graine){
       gl_FragColor = vec4(R, V, B, a);
     }`;
 
+  /* ---------- Programme des étiquettes ----------
+     Les caractères ne se dessinent pas en WebGL : on les cuit une
+     fois pour toutes dans une texture, puis on les affiche comme des
+     quadrilatères DANS la scène. Ils écrivent et testent donc la même
+     profondeur que le bâtiment : le GPU décide pixel par pixel de ce
+     qui passe devant. Aucune extinction, aucun calque. */
+  const VS_ETIQ = `
+    precision highp float;
+    attribute vec3 aAncre;      // le point du modèle visé
+    attribute vec2 aDec;        // décalage à l'écran, en pixels
+    attribute vec2 aUV;
+
+    uniform vec2  uTaille;
+    uniform float uAngle, uTilt, uEch, uDecalY;
+    uniform float uFocus, uDemi, uForce, uMaxCoC;
+
+    varying vec2  vUV;
+    varying float vCoC;
+
+    vec3 versEcran(vec3 p){
+      float ca = cos(uAngle), sa = sin(uAngle);
+      float x  = p.x*ca - p.z*sa;
+      float z1 = p.x*sa + p.z*ca;
+      float cb = cos(uTilt), sb = sin(uTilt);
+      float y  = p.y*cb - z1*sb;
+      float zz = p.y*sb + z1*cb;
+      float f  = 9.0 / (9.0 + zz + 13.0);
+      return vec3(uTaille.x*0.5 + x*f*uEch,
+                  uTaille.y*0.5 - y*f*uEch + uDecalY, zz);
+    }
+    void main(){
+      vec3 e = versEcran(aAncre);
+      vec2 pos = e.xy + aDec;
+      vUV = aUV;
+      float d = min(2.0, abs(e.z - uFocus) / uDemi);
+      vCoC = min(uMaxCoC, pow(d, 1.55) * uForce);
+      float zn = clamp(e.z / 8.0, -0.99, 0.99);
+      gl_Position = vec4(pos.x / uTaille.x * 2.0 - 1.0,
+                         1.0 - pos.y / uTaille.y * 2.0, zn, 1.0);
+    }`;
+
+  const FS_ETIQ = `
+    precision highp float;
+    varying vec2  vUV;
+    varying float vCoC;
+    uniform sampler2D uAtlas;
+    uniform vec2 uPix;          // taille d'un texel
+    void main(){
+      // Flou de profondeur : neuf prélèvements étalés selon le
+      // cercle de confusion, comme pour le bâtiment.
+      float a = 0.0;
+      float r = vCoC;
+      a += texture2D(uAtlas, vUV).a * 0.28;
+      for(int i = 0; i < 8; i++){
+        float t = float(i) / 8.0 * 6.2831853;
+        vec2 o = vec2(cos(t), sin(t)) * r * uPix;
+        a += texture2D(uAtlas, vUV + o).a * 0.09;
+      }
+      gl_FragColor = vec4(vec3(0.82, 0.85, 0.90) * a, a);
+    }`;
+
   const progTrait = lier(VS_TRAIT, FS_TRAIT);
+  const progEtiq  = lier(VS_ETIQ, FS_ETIQ);
   const progCA    = lier(VS_PLEIN, FS_CA);
 
   const A = {
@@ -500,6 +559,63 @@ function holo(hote, graine){
   const bufDyn = gl.createBuffer();
   let nDyn = 0;
 
+  /* ---------- Atlas : tous les libellés cuits dans une texture ---------- */
+  const LIGNE = 22, MARGE = 3;
+  const atl = document.createElement('canvas');
+  const ac  = atl.getContext('2d');
+  atl.width = 512; atl.height = LIGNE * etiquettes.length;
+  ac.font = '13px ui-monospace, "SFMono-Regular", monospace';
+  ac.textBaseline = 'top';
+  ac.fillStyle = '#fff';
+  etiquettes.forEach((et, i) => {
+    et.w = Math.ceil(ac.measureText(et.t).width) + MARGE*2;
+    et.h = LIGNE;
+    et.u0 = 0; et.v0 = i*LIGNE / atl.height;
+    et.u1 = et.w / atl.width; et.v1 = (i+1)*LIGNE / atl.height;
+    ac.fillText(et.t, MARGE, i*LIGNE + 4);
+  });
+  const texAtlas = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texAtlas);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atl);
+  for(const [p, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR],
+                       [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
+                       [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE],
+                       [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]])
+    gl.texParameteri(gl.TEXTURE_2D, p, v);
+
+  // Un quadrilatère par étiquette : ancre, décalage écran, coordonnées
+  // de texture. Sept flottants par sommet, six sommets par étiquette.
+  const FE = 7;
+  const dEtiq = new Float32Array(etiquettes.length * 6 * FE);
+  {
+    let k = 0;
+    const coins = [[0,0],[1,0],[0,1],[0,1],[1,0],[1,1]];
+    for(const et of etiquettes){
+      const A = P[et.idx];
+      for(const [cu, cv2] of coins){
+        dEtiq[k++] = A[0]; dEtiq[k++] = A[1]; dEtiq[k++] = A[2];
+        dEtiq[k++] = et.dx + cu*et.w;
+        dEtiq[k++] = et.dy + cv2*et.h;
+        dEtiq[k++] = et.u0 + cu*(et.u1 - et.u0);
+        dEtiq[k++] = et.v0 + cv2*(et.v1 - et.v0);
+      }
+    }
+  }
+  const bufEtiq = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufEtiq);
+  gl.bufferData(gl.ARRAY_BUFFER, dEtiq, gl.STATIC_DRAW);
+  const nEtiq = etiquettes.length * 6;
+
+  const AE = {
+    aAncre: gl.getAttribLocation(progEtiq, 'aAncre'),
+    aDec:   gl.getAttribLocation(progEtiq, 'aDec'),
+    aUV:    gl.getAttribLocation(progEtiq, 'aUV')
+  };
+  const UE = {};
+  for(const n of ['uTaille','uAngle','uTilt','uEch','uDecalY',
+                  'uFocus','uDemi','uForce','uMaxCoC','uAtlas','uPix'])
+    UE[n] = gl.getUniformLocation(progEtiq, n);
+
   const bufPlein = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, bufPlein);
   gl.bufferData(gl.ARRAY_BUFFER,
@@ -522,15 +638,21 @@ function holo(hote, graine){
   const redim = () => {
     DPR = Math.min(devicePixelRatio || 1, 2);
     L = hote.clientWidth || 1; H = hote.clientHeight || 1;
-    for(const c of [cv, tx, txB]){ c.width = L*DPR; c.height = H*DPR; }
+    for(const c of [cv, tx]){ c.width = L*DPR; c.height = H*DPR; }
     t2.setTransform(DPR, 0, 0, DPR, 0, 0);
-    tB.setTransform(DPR, 0, 0, DPR, 0, 0);
     gl.bindTexture(gl.TEXTURE_2D, texte);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, L*DPR, H*DPR, 0,
                   gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
                             gl.TEXTURE_2D, texte, 0);
+    // Sans tampon de profondeur attaché au framebuffer, le test de
+    // profondeur n'a aucun effet lorsqu'on rend hors écran.
+    if(!globalThis.__rbz) globalThis.__rbz = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, globalThis.__rbz);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, L*DPR, H*DPR);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT,
+                               gl.RENDERBUFFER, globalThis.__rbz);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   };
 
@@ -791,59 +913,8 @@ function holo(hote, graine){
     // flou de profondeur ET l'aberration chromatique : trois passes
     // rouge, verte et bleue dilatées depuis le centre de l'image,
     // recomposées en additif, exactement comme le shader du bâtiment.
-    const CANAUX2D = [[1.0045,'255,0,0'], [1.0,'0,255,0'], [0.9955,'0,0,255']];
-    const POLICE = '10px ui-monospace, "SFMono-Regular", monospace';
-    t2.font = POLICE; tB.font = POLICE;
-    for(const et of etiquettes){
-      const a = proj(P[et.idx]);              // le point visé
-      const qx = a[0] + et.dx, qy = a[1] + et.dy;
-
-      // TOUJOURS allumée. Seul son calque change : devant le bâtiment
-      // sur le calque du dessus, derrière sur celui du dessous, où le
-      // filaire vient la recouvrir. C'est de la profondeur, pas une
-      // extinction.
-      const g = occulte(a) ? tB : t2;
-
-      const d = Math.min(2, Math.abs((a[2] - zMed) / 1.15));
-      const coc = Math.min(7, Math.pow(d, 1.55) * 4.4);
-      const al = .82;
-      const w = g.measureText(et.t).width;
-
-      g.globalCompositeOperation = 'source-over';
-      g.filter = 'none';
-      g.globalAlpha = al * .62;
-      g.fillStyle = 'rgba(3,8,15,1)';
-      g.fillRect(qx - 4, qy - 9, w + 8, 13);
-
-      // les trois canaux, en additif
-      g.globalCompositeOperation = 'lighter';
-      for(const [k, col] of CANAUX2D){
-        const ax = L/2 + (qx - L/2)*k, ay = H/2 + (qy - H/2)*k;
-        const bx = L/2 + (a[0] - L/2)*k, by = H/2 + (a[1] - H/2)*k;
-        g.fillStyle = `rgb(${col})`;
-        g.strokeStyle = `rgb(${col})`;
-        if(coc > .4 && filtreOK) g.filter = `blur(${coc.toFixed(2)}px)`;
-        else g.filter = 'none';
-        g.globalAlpha = al * .42;
-        g.fillText(et.t, ax, ay);
-        // trait de rappel jusqu'au point visé, avec sa patte
-        g.globalAlpha = al * .30;
-        g.beginPath();
-        g.moveTo(ax + (et.dx > 0 ? -4 : w + 4), ay - 3);
-        g.lineTo(ax + (et.dx > 0 ? -14 : w + 14), ay - 3);
-        g.lineTo(bx, by);
-        g.stroke();
-        // petite croix sur le point visé
-        g.globalAlpha = al * .38;
-        g.beginPath();
-        g.moveTo(bx - 4, by); g.lineTo(bx + 4, by);
-        g.moveTo(bx, by - 4); g.lineTo(bx, by + 4);
-        g.stroke();
-      }
-      g.globalCompositeOperation = 'source-over';
-      g.filter = 'none';
-    }
-    t2.filter = 'none';
+    // Les étiquettes ne sont plus ici : elles sont rendues dans la
+    // scène WebGL, avec la profondeur.
 
     // Graduations chiffrées de la couronne, très en retrait
     t2.font = '9px ui-monospace, "SFMono-Regular", monospace';
@@ -950,7 +1021,11 @@ function holo(hote, graine){
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.viewport(0, 0, W, Ht);
     gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clearDepth(1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);          // additif, comme des lumières
 
@@ -985,7 +1060,35 @@ function holo(hote, graine){
     nDyn = dyn.length * 6;
     tracer(bufDyn, nDyn);
 
+    /* ---- Les étiquettes, DANS la scène ----
+       Même tampon de profondeur que le bâtiment : le GPU décide seul,
+       pixel par pixel, de ce qui passe devant. Elles sont toujours
+       dessinées ; ce sont les traits du bâtiment situés devant elles
+       qui les recouvrent. Elles écrivent aussi leur profondeur, donc
+       elles se masquent correctement entre elles. */
+    gl.useProgram(progEtiq);
+    gl.uniform2f(UE.uTaille, L, H);
+    gl.uniform1f(UE.uAngle, angle);
+    gl.uniform1f(UE.uTilt, tilt);
+    gl.uniform1f(UE.uEch, ECH());
+    gl.uniform1f(UE.uDecalY, H*.03);
+    gl.uniform1f(UE.uFocus, Math.sin(tilt) * (SOL + .95));
+    gl.uniform1f(UE.uDemi,   1.15);
+    gl.uniform1f(UE.uForce,  5.5);
+    gl.uniform1f(UE.uMaxCoC, 14.0);
+    gl.uniform2f(UE.uPix, 1/atl.width, 1/atl.height);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texAtlas);
+    gl.uniform1i(UE.uAtlas, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufEtiq);
+    for(const [loc, taille, dec] of [[AE.aAncre,3,0],[AE.aDec,2,3],[AE.aUV,2,5]]){
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, taille, gl.FLOAT, false, FE*4, dec*4);
+    }
+    gl.drawArrays(gl.TRIANGLES, 0, nEtiq);
+
     // Aberration chromatique sur l'image entière
+    gl.disable(gl.DEPTH_TEST);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, W, Ht);
     gl.clearColor(0, 0, 0, 0);
