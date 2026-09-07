@@ -300,9 +300,12 @@ function holo(hote, graine){
   // Opacités fortement réduites. En composition additive, la densité
   // du modèle extrait faisait saturer le blanc : au-delà de 1, les
   // valeurs s'écrasent et tout le dessin disparaît dans un aplat.
-  pousse(resille, .7,  .075);
-  pousse(dalles,  .9,  .17);
-  pousse(porteur, 1.2, .30);
+  // Toutes les familles au MÊME trait : 0,9 px. Les largeurs variables
+  // saturaient par endroits et fabriquaient la surcharge visuelle.
+  // Seule l'opacité porte désormais la hiérarchie.
+  pousse(resille, .9, .075);
+  pousse(dalles,  .9, .17);
+  pousse(porteur, .9, .30);
 
   // Cercles d'instrument et leurs graduations
   const CI = [0, SOL + .95, 0];
@@ -322,7 +325,7 @@ function holo(hote, graine){
         const g = ((i/pas) % 5 === 0) ? 1.075 : 1.032;
         statiques.push({ a: p,
           b: [CI[0] + (p[0]-CI[0])*g, CI[1] + (p[1]-CI[1])*g, CI[2] + (p[2]-CI[2])*g],
-          w: .8, al: inst.al * 1.4, fam: 1 });
+          w: .9, al: inst.al * 1.4, fam: 1 });
       }
     }
     if(inst.arc){
@@ -330,14 +333,14 @@ function holo(hote, graine){
         const p = inst.pts[i % n], g = 1.11;
         statiques.push({ a: p,
           b: [p[0]*g, (p[1]-CI[1])*g + CI[1], p[2]*g],
-          w: 1.3, al: inst.al * 2.4, fam: 1 });
+          w: .9, al: inst.al * 2.4, fam: 1 });
       }
     }
   }
 
   // Gnomon
-  for(const ax of axes) statiques.push({ a:P[ax.a], b:P[ax.b], w:1.3, al:.70, fam:1 });
-  for(const [a, b] of gradAxes) statiques.push({ a:P[a], b:P[b], w:1.0, al:.66, fam:1 });
+  for(const ax of axes) statiques.push({ a:P[ax.a], b:P[ax.b], w: .9, al:.70, fam:1 });
+  for(const [a, b] of gradAxes) statiques.push({ a:P[a], b:P[b], w:.9, al:.66, fam:1 });
 
   /* =========================================================
      CONTEXTE WEBGL
@@ -747,7 +750,7 @@ function holo(hote, graine){
           + .055*Math.sin(5*a2 - temps*.0005 + c*1.7)
           + .032*Math.sin(8*a2 + temps*.0009);
         const p = [Math.cos(a2)*r, SOL-.28, Math.sin(a2)*r];
-        if(prec) S.push({ a:prec, b:p, w:.7, al:.16, fam:1 });
+        if(prec) S.push({ a:prec, b:p, w:.9, al:.16, fam:1 });
         prec = p;
       }
     }
@@ -758,12 +761,12 @@ function holo(hote, graine){
       const A = P[et.idx];
       const B = [A[0]+et.off[0], A[1]+et.off[1], A[2]+et.off[2]];
       const C = [A[0]+et.off[0]*.30, A[1]+et.off[1]*.72, A[2]+et.off[2]*.30];
-      S.push({ a:A, b:C, w:.8,  al: et.loin ? .16 : .34, fam:1 });
-      S.push({ a:C, b:B, w:.8,  al: et.loin ? .16 : .34, fam:1 });
+      S.push({ a:A, b:C, w:.9,  al: et.loin ? .16 : .34, fam:1 });
+      S.push({ a:C, b:B, w:.9,  al: et.loin ? .16 : .34, fam:1 });
       // petite croix sur le point visé
       const e = .035;
-      S.push({ a:[A[0]-e,A[1],A[2]], b:[A[0]+e,A[1],A[2]], w:1.0, al:.42, fam:1 });
-      S.push({ a:[A[0],A[1]-e,A[2]], b:[A[0],A[1]+e,A[2]], w:1.0, al:.42, fam:1 });
+      S.push({ a:[A[0]-e,A[1],A[2]], b:[A[0]+e,A[1],A[2]], w:.9, al:.42, fam:1 });
+      S.push({ a:[A[0],A[1]-e,A[2]], b:[A[0],A[1]+e,A[2]], w:.9, al:.42, fam:1 });
     }
 
     // Arêtes lumineuses : une onde remonte chaque spirale, comme les
@@ -774,7 +777,7 @@ function holo(hote, graine){
         const u = i/(n-1);
         const onde = Math.pow(Math.max(0, Math.sin(u*4.2 - temps*.0011 + k*2.1)), 3);
         S.push({ a: fil[i], b: fil[i+1],
-                 w: .9 + 2.4*onde, al: .34 + 1.9*onde, fam: 2 });
+                 w: .9, al: .34 + 1.9*onde, fam: 2 });
       }
     }
 
@@ -787,7 +790,7 @@ function holo(hote, graine){
       if(!on) continue;
       const g = .35 + .65*c, e = .022;
       S.push({ a:[p[0]-e, p[1], p[2]], b:[p[0]+e, p[1], p[2]],
-               w: 2.4, al: .30 + 1.25*g, fam: 2 });
+               w: .9, al: .30 + 1.25*g, fam: 2 });
     }
 
     // Feux de balisage au sommet, battement lent et régulier
@@ -796,7 +799,7 @@ function holo(hote, graine){
       const b = Math.pow(Math.max(0, Math.sin(temps*.0016 + i*2.1)), 6);
       if(b < .02) continue;
       S.push({ a:[p[0]-.012, p[1], p[2]], b:[p[0]+.012, p[1], p[2]],
-               w: 3.4, al: .4 + 2.6*b, fam: 2 });
+               w: .9, al: .4 + 2.6*b, fam: 2 });
     }
 
     // Câbles, en pointillés qui défilent
@@ -824,10 +827,10 @@ function holo(hote, graine){
         if(i < 0 || i + 1 >= n) continue;       // hors de l'arc : rien
         const g = Math.sin((j + .5)/LG * Math.PI);
         S.push({ a: arc.pts[i], b: arc.pts[i+1],
-                 w: .9 + 2.6*g, al: .30 + 1.5*g, fam: 2 });
+                 w: .9, al: .30 + 1.5*g, fam: 2 });
       }
       for(let i = 0; i + 1 < n; i += 2)
-        S.push({ a: arc.pts[i], b: arc.pts[i+1], w:.8, al:.10, fam:2 });
+        S.push({ a: arc.pts[i], b: arc.pts[i+1], w:.9, al:.10, fam:2 });
     }
 
     // Les réticules ne sont plus ici : ils passent sur le calque 2D,
@@ -839,7 +842,7 @@ function holo(hote, graine){
       const l = e.l * .0022;
       S.push({ a:[e.p[0]-Math.cos(e.ang)*l, e.p[1]-Math.sin(e.ang)*l, e.p[2]],
                b:[e.p[0]+Math.cos(e.ang)*l, e.p[1]+Math.sin(e.ang)*l, e.p[2]],
-               w: 2.6, al: .5 + 1.3*g, fam: 2 });
+               w: .9, al: .5 + 1.3*g, fam: 2 });
     }
     return S;
   };
