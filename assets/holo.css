@@ -151,6 +151,9 @@ body::before{
   color:var(--gris-archive);
   white-space:nowrap;pointer-events:none;user-select:none;
 }
+/* Les cartouches des marges sont loin dans la scène : ils subissent
+   la même profondeur de champ que le reste. */
+.releve{filter:blur(2.4px)}
 .releve.g{top:26vh;left:var(--marge)}
 .releve.d{top:34vh;right:var(--marge);text-align:right}
 .releve em{font-style:normal;color:var(--bleu-blueprint)}

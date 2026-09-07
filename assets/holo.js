@@ -442,12 +442,17 @@ function holo(hote, graine){
 
     // cible 0 : image nette. 1 : calque doux. 2 : calque très flou.
     const CIBLES = [ctx, bufs[0].x, bufs[1].x];
+    // Les calques ont un repère mis à l'échelle. Sans compenser
+    // l'épaisseur, un trait de 0,6 px n'en fait plus que 0,027 dans le
+    // calque le plus grossier : il n'est pas flou, il est absent.
+    const COMP = [1, 1/ECH[0], 1/ECH[1]];
     const lot = (seg, alpha, lw, cible, dash) => {
       const c = CIBLES[cible];
-      if(dash){ c.setLineDash(dash); c.lineDashOffset = -temps * .02; }
+      const k2 = COMP[cible];
+      if(dash){ c.setLineDash(dash.map(v => v*k2)); c.lineDashOffset = -temps*.02*k2; }
       else c.setLineDash([]);
       c.globalAlpha = Math.min(1, alpha);
-      c.lineWidth = lw;
+      c.lineWidth = lw * k2;
       c.beginPath();
       for(const [a,b] of seg){
         c.moveTo(pts[a][0], pts[a][1]);
@@ -603,6 +608,16 @@ function holo(hote, graine){
     // sur les hautes lumières que l'aberration se voit le plus.
     const kSpec = 1 + (k - 1) * 3.4;
     const abS = q => [L/2 + (q[0]-L/2)*kSpec, H/2 + (q[1]-H/2)*kSpec];
+    // Choix du calque selon la profondeur, pour que les éléments
+    // lumineux soient eux aussi soumis à la profondeur de champ.
+    const calquePour = (p3) => {
+      if(!flou) return 0;
+      const z = proj(p3)[2];
+      const d = Math.min(2, Math.abs((z - zMid) / demi));
+      const n = Math.min(1, d * d * 1.45);
+      return n < .34 ? 0 : (n < .72 ? 1 : 2);
+    };
+
     ctx.lineCap = 'round';
     for(const arc of arcs){
       const ph = (temps * arc.v + arc.ph) % 1;      // la lumière glisse
@@ -611,17 +626,21 @@ function holo(hote, graine){
       // Cinq tronçons au lieu de treize : le fondu reste lisible et
       // le coût est divisé par presque trois.
       const len = 15, TR = 5;
+      const cq = calquePour(arc.pts[i0 % n]);
+      const cc = CIBLES[cq], kk = COMP[cq];
+      cc.lineCap = 'round';
       for(let t2 = 0; t2 < TR; t2++){
         const g = Math.sin((t2 + .5) / TR * Math.PI);
-        ctx.globalAlpha = .95 * g;
-        ctx.lineWidth = .8 + 2.1 * g;
-        ctx.beginPath();
+        cc.globalAlpha = .95 * g;
+        cc.lineWidth = (.8 + 2.1 * g) * kk;
+        cc.beginPath();
         for(let j = Math.floor(t2*len/TR); j <= Math.floor((t2+1)*len/TR); j++){
           const q = abS(proj(arc.pts[(i0 + j) % n]));
-          j === Math.floor(t2*len/TR) ? ctx.moveTo(q[0],q[1]) : ctx.lineTo(q[0],q[1]);
+          j === Math.floor(t2*len/TR) ? cc.moveTo(q[0],q[1]) : cc.lineTo(q[0],q[1]);
         }
-        ctx.stroke();
+        cc.stroke();
       }
+      cc.lineCap = 'butt';
       // le reste de l'arc, à peine visible
       ctx.globalAlpha = .13; ctx.lineWidth = .5;
       ctx.beginPath();
@@ -636,12 +655,15 @@ function holo(hote, graine){
     for(const e of eclats){
       const q = abS(proj(e.p));
       const g = .35 + .65 * Math.abs(Math.sin(temps * .0011 + e.ph));
-      ctx.globalAlpha = .9 * g;
-      ctx.lineWidth = 2.4;
-      ctx.beginPath();
-      ctx.moveTo(q[0] - Math.cos(e.ang)*e.l/2, q[1] - Math.sin(e.ang)*e.l/2);
-      ctx.lineTo(q[0] + Math.cos(e.ang)*e.l/2, q[1] + Math.sin(e.ang)*e.l/2);
-      ctx.stroke();
+      const cq = calquePour(e.p), cc = CIBLES[cq], kk = COMP[cq];
+      cc.globalAlpha = .9 * g;
+      cc.lineWidth = 2.4 * kk;
+      cc.lineCap = 'round';
+      cc.beginPath();
+      cc.moveTo(q[0] - Math.cos(e.ang)*e.l/2, q[1] - Math.sin(e.ang)*e.l/2);
+      cc.lineTo(q[0] + Math.cos(e.ang)*e.l/2, q[1] + Math.sin(e.ang)*e.l/2);
+      cc.stroke();
+      cc.lineCap = 'butt';
     }
     ctx.lineCap = 'butt';
 
