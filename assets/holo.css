@@ -1,0 +1,221 @@
+/* ============================================================
+   Archive des futurs non construits
+   Feuille de style partagée par toutes les pages.
+   ============================================================ */
+
+:root{
+  --vide:#05060E;
+  --profond:#0A0D1C;
+  --trait:#1A2140;
+  --encre:#EDF1FF;
+  --sourdine:#8B97B4;
+
+  --holo-cyan:#64E9FF;
+  --holo-violet:#A78BFA;
+  --holo-rose:#FF8FC8;
+
+  --mesure:64ch;
+  --marge:clamp(20px,5vw,72px);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+
+body{
+  background:var(--vide);
+  color:var(--encre);
+  font-family:"Instrument Sans",system-ui,sans-serif;
+  font-size:16px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+  min-height:100svh;
+}
+
+/* Voile irisé, très lent, derrière tout le reste ---------- */
+body::before{
+  content:"";
+  position:fixed;
+  inset:-30%;
+  z-index:-2;
+  background:
+    radial-gradient(42% 38% at 22% 18%, rgba(100,233,255,.16), transparent 68%),
+    radial-gradient(48% 44% at 78% 30%, rgba(167,139,250,.15), transparent 70%),
+    radial-gradient(40% 40% at 55% 88%, rgba(255,143,200,.11), transparent 72%);
+  filter:blur(28px);
+  animation:derive 34s ease-in-out infinite alternate;
+  pointer-events:none;
+}
+@keyframes derive{
+  0%  {transform:translate3d(0,0,0) scale(1)}
+  50% {transform:translate3d(-3%,2%,0) scale(1.07)}
+  100%{transform:translate3d(2%,-3%,0) scale(1.03)}
+}
+
+/* Grain, pour casser le lissé des dégradés ---------------- */
+body::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:-1;
+  pointer-events:none;
+  opacity:.045;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Typographie --------------------------------------------- */
+h1,h2,.titre{
+  font-family:"Syne",system-ui,sans-serif;
+  font-weight:700;
+  letter-spacing:-.035em;
+  line-height:.94;
+}
+
+h1{font-size:clamp(2.9rem,10.5vw,6.6rem)}
+h2{font-size:clamp(1.5rem,4vw,2.1rem);letter-spacing:-.025em}
+
+.dit{
+  font-size:clamp(1rem,2.4vw,1.15rem);
+  color:var(--sourdine);
+  max-width:46ch;
+  line-height:1.55;
+}
+
+/* Le seul endroit où la couleur apparaît en texte ---------- */
+.irise{
+  background:linear-gradient(101deg,var(--holo-cyan),var(--holo-violet) 46%,var(--holo-rose));
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+}
+
+/* Structure ------------------------------------------------ */
+.page{padding:var(--marge);max-width:1180px;margin:0 auto}
+
+.bandeau{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  gap:20px;
+  font-size:.8rem;
+  color:var(--sourdine);
+  letter-spacing:.01em;
+}
+.bandeau a{color:var(--sourdine);text-decoration:none}
+.bandeau a:hover{color:var(--encre)}
+
+/* Scène filaire -------------------------------------------- */
+.scene{
+  position:relative;
+  width:100%;
+  aspect-ratio:1/1;
+  max-height:56svh;
+  margin:clamp(24px,5vw,44px) 0;
+}
+.scene canvas{width:100%;height:100%;display:block}
+
+/* Liste des projets ---------------------------------------- */
+.projets{list-style:none;margin-top:clamp(48px,9vw,96px)}
+
+.projet{
+  position:relative;
+  border-top:1px solid var(--trait);
+  overflow:hidden;
+}
+.projets .projet:last-child{border-bottom:1px solid var(--trait)}
+
+.projet a{
+  position:relative;
+  z-index:1;
+  display:grid;
+  grid-template-columns:2.6rem 1fr auto;
+  gap:clamp(14px,3vw,32px);
+  align-items:center;
+  padding:clamp(20px,3.4vw,30px) 2px;
+  text-decoration:none;
+  color:inherit;
+  transition:transform .5s cubic-bezier(.16,1,.3,1);
+}
+.projet a:hover,.projet a:focus-visible{transform:translateX(10px)}
+.projet a:focus-visible{outline:2px solid var(--holo-cyan);outline-offset:4px}
+
+.rang{
+  font-family:"Syne",sans-serif;
+  font-size:.92rem;
+  font-weight:600;
+  color:var(--sourdine);
+  font-variant-numeric:tabular-nums;
+}
+.projet .titre{font-size:clamp(1.35rem,4.6vw,2.2rem)}
+.etat{font-size:.78rem;color:var(--sourdine);text-align:right}
+
+/* Balayage irisé au survol */
+.projet::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(97deg,rgba(100,233,255,.11),rgba(167,139,250,.09) 48%,rgba(255,143,200,.07));
+  opacity:0;
+  transition:opacity .45s ease;
+  pointer-events:none;
+}
+.projet:hover::after,.projet:focus-within::after{opacity:1}
+
+/* Boutons --------------------------------------------------- */
+.action{
+  display:block;
+  width:100%;
+  border:none;
+  cursor:pointer;
+  font-family:"Syne",sans-serif;
+  font-size:1.06rem;
+  font-weight:600;
+  letter-spacing:-.015em;
+  color:#05060E;
+  background:linear-gradient(101deg,var(--holo-cyan),var(--holo-violet) 52%,var(--holo-rose));
+  background-size:210% 100%;
+  padding:19px 24px;
+  border-radius:2px;
+  transition:background-position .7s cubic-bezier(.16,1,.3,1);
+}
+.action:hover,.action:focus-visible{background-position:100% 0}
+.action:focus-visible{outline:2px solid var(--encre);outline-offset:3px}
+
+.discret{
+  display:block;
+  width:100%;
+  margin-top:14px;
+  padding:15px;
+  text-align:center;
+  background:none;
+  border:1px solid var(--trait);
+  border-radius:2px;
+  color:var(--sourdine);
+  font-family:"Instrument Sans",sans-serif;
+  font-size:.92rem;
+  text-decoration:none;
+  cursor:pointer;
+  transition:border-color .3s ease,color .3s ease;
+}
+.discret:hover,.discret:focus-visible{border-color:var(--holo-violet);color:var(--encre)}
+
+/* Pied ------------------------------------------------------ */
+footer{
+  margin-top:clamp(56px,10vw,110px);
+  padding-top:22px;
+  border-top:1px solid var(--trait);
+  font-size:.78rem;
+  color:var(--sourdine);
+  line-height:1.9;
+}
+
+/* Ouverture de page, un seul mouvement orchestré ------------ */
+.leve{opacity:0;transform:translateY(16px);animation:leve .95s cubic-bezier(.16,1,.3,1) forwards}
+.leve:nth-child(2){animation-delay:.09s}
+.leve:nth-child(3){animation-delay:.18s}
+@keyframes leve{to{opacity:1;transform:none}}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .leve{opacity:1;transform:none}
+}
