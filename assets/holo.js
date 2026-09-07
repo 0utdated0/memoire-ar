@@ -1,21 +1,23 @@
 /* ============================================================
    Beyond Blueprint - relevé d'un bâtiment non construit.
+   Rendu WebGL.
 
-   Écrit intégralement pour ce projet. Techniques employées,
-   toutes d'usage courant :
-     - aberration chromatique latérale par dilatation radiale
-       de trois passes rouge, verte et bleue
-     - flou de profondeur par bandes de distance
-     - pointillés défilants par décalage de phase
-     - champ de courbes de niveau animé par somme de sinus
+   La profondeur de champ est calculée par le processeur graphique,
+   pixel par pixel. Chaque segment est transformé en bandeau ; à
+   chaque extrémité on calcule son cercle de confusion, c'est-à-dire
+   le rayon de flou qu'un objectif produirait à cette distance du
+   plan de netteté. La valeur est interpolée le long du trait, et le
+   shader de fragment s'en sert pour étaler le bord du trait.
+   Résultat : un flou continu, sans calque ni palier.
+
+   L'aberration chromatique est appliquée ensuite, sur l'image
+   entière, par décalage radial des trois canaux.
+
+   Écrit pour ce projet, sans bibliothèque.
    ============================================================ */
 
 function holo(hote, graine){
   if(!hote) return null;
-
-  const cv  = document.createElement('canvas');
-  const ctx = cv.getContext('2d');
-  hote.appendChild(cv);
 
   let etat = graine >>> 0;
   const alea = () => {
@@ -294,55 +296,277 @@ function holo(hote, graine){
     al: .13 * (1 - c*.42)
   }));
 
-  /* Quels sommets appartiennent au bâtiment et non au décor.
-     C'est sur eux, et eux seuls, que se règle la mise au point. */
-  const estBati = P.map(p => Math.hypot(p[0], p[2]) < 1.35);
 
   /* =========================================================
-     PROJECTION
+     PRÉPARATION DES SEGMENTS
+     Les couches deviennent une liste plate : chaque segment porte
+     ses deux extrémités, son épaisseur et son opacité.
      ========================================================= */
-  /* Deux calques hors écran en définition réduite. Redessiné à
-     l'échelle 1, un calque à 42 % est légèrement flou, un calque à
-     15 % l'est nettement : c'est le rééchantillonnage qui fait le
-     flou, sans aucun coût de tracé supplémentaire. */
-  const ECH = [.42, .15];
-  const bufs = ECH.map(() => {
-    const c = document.createElement('canvas');
-    return { c, x: c.getContext('2d') };
-  });
+  const G4 = G / 2;
+  const rayonSol = (a, b) =>
+    Math.max(Math.hypot(P[a][0], P[a][2]), Math.hypot(P[b][0], P[b][2]));
 
+  const statiques = [];
+  const pousse = (liste, w, al) => {
+    for(const [a, b] of liste)
+      statiques.push({ a:P[a], b:P[b], w, al });
+  };
+  for(const [a, b] of trame){
+    const d = rayonSol(a, b);
+    statiques.push({ a:P[a], b:P[b], w:.9,
+                     al: .16 * Math.max(.18, 1 - d / (G * 1.05)) });
+  }
+  pousse(resille, .8,  .22);
+  pousse(dalles,  1.1, .50);
+  pousse(porteur, 1.5, .70);
+
+  // Cercles d'instrument et leurs graduations
+  const CI = [0, SOL + .95, 0];
+  for(const inst of instruments){
+    const n = inst.pts.length;
+    const i0 = inst.arc ? Math.floor(inst.arc[0]*n) : 0;
+    const i1 = inst.arc ? Math.floor(inst.arc[1]*n) : n;
+    for(let i = i0; i < i1; i++){
+      if(inst.dash && (i % 4) > 1) continue;      // pointillé figé
+      statiques.push({ a: inst.pts[i % n], b: inst.pts[(i+1) % n],
+                       w: .9, al: inst.al });
+    }
+    if(inst.ticks){
+      const pas = Math.max(1, Math.floor(n / inst.ticks));
+      for(let i = i0; i < i1; i += pas){
+        const p = inst.pts[i % n];
+        const g = ((i/pas) % 5 === 0) ? 1.075 : 1.032;
+        statiques.push({ a: p,
+          b: [CI[0] + (p[0]-CI[0])*g, CI[1] + (p[1]-CI[1])*g, CI[2] + (p[2]-CI[2])*g],
+          w: .8, al: inst.al * .85 });
+      }
+    }
+    if(inst.arc){
+      for(const i of [i0, i1 - 1]){
+        const p = inst.pts[i % n], g = 1.11;
+        statiques.push({ a: p,
+          b: [p[0]*g, (p[1]-CI[1])*g + CI[1], p[2]*g],
+          w: 1.3, al: inst.al * 1.5 });
+      }
+    }
+  }
+
+  // Gnomon
+  for(const ax of axes) statiques.push({ a:P[ax.a], b:P[ax.b], w:1.3, al:.42 });
+  for(const [a, b] of gradAxes) statiques.push({ a:P[a], b:P[b], w:1.0, al:.40 });
+
+  /* =========================================================
+     CONTEXTE WEBGL
+     ========================================================= */
+  const cv = document.createElement('canvas');
+  cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block';
+  hote.appendChild(cv);
+
+  // Calque texte : le GPU ne dessine pas de caractères.
+  const tx = document.createElement('canvas');
+  tx.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none';
+  hote.appendChild(tx);
+  const t2 = tx.getContext('2d');
+
+  const gl = cv.getContext('webgl', {
+    alpha: true, premultipliedAlpha: true, antialias: false, depth: false
+  });
+  if(!gl){ console.warn('holo : WebGL indisponible'); return null; }
+
+  const compile = (type, src) => {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src); gl.compileShader(sh);
+    if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS))
+      console.error('holo shader :', gl.getShaderInfoLog(sh));
+    return sh;
+  };
+  const lier = (vs, fs) => {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(p);
+    if(!gl.getProgramParameter(p, gl.LINK_STATUS))
+      console.error('holo lien :', gl.getProgramInfoLog(p));
+    return p;
+  };
+
+  /* ---------- Programme 1 : les traits ---------- */
+  const VS_TRAIT = `
+    precision highp float;
+    attribute vec3  aA, aB;
+    attribute vec2  aCoin;     // x : extrémité 0 ou 1, y : côté -1 ou +1
+    attribute vec2  aStyle;    // x : épaisseur, y : opacité
+
+    uniform vec2  uTaille;     // largeur, hauteur en pixels
+    uniform float uAngle, uTilt, uEch, uDecalY;
+    uniform float uFocus, uDemi, uForce, uMaxCoC;
+
+    varying float vTrav;   // position en travers du trait, en pixels
+    varying float vDemi;   // demi-épaisseur nette
+    varying float vCoC;    // rayon de flou
+    varying float vOp;
+
+    // Reprend exactement la projection utilisée pour le texte.
+    vec3 versEcran(vec3 p){
+      float ca = cos(uAngle), sa = sin(uAngle);
+      float x  = p.x*ca - p.z*sa;
+      float z1 = p.x*sa + p.z*ca;
+      float cb = cos(uTilt), sb = sin(uTilt);
+      float y  = p.y*cb - z1*sb;
+      float zz = p.y*sb + z1*cb;
+      float f  = 3.4 / (3.4 + zz + 5.0);
+      return vec3(uTaille.x*0.5 + x*f*uEch,
+                  uTaille.y*0.5 - y*f*uEch + uDecalY,
+                  zz);
+    }
+
+    // Cercle de confusion : croît avec l'écart au plan de netteté.
+    float coc(float zz){
+      float d = min(2.0, abs(zz - uFocus) / uDemi);
+      return min(uMaxCoC, pow(d, 1.55) * uForce);
+    }
+
+    void main(){
+      vec3 ea = versEcran(aA);
+      vec3 eb = versEcran(aB);
+      vec2 dir = eb.xy - ea.xy;
+      float lg = max(length(dir), 0.0001);
+      vec2 nor = vec2(-dir.y, dir.x) / lg;
+
+      float zz  = mix(ea.z, eb.z, aCoin.x);
+      vCoC      = coc(zz);
+      vDemi     = max(0.45, aStyle.x * 0.5);
+      // Le bandeau doit être assez large pour contenir l'étalement.
+      float rayon = vDemi + vCoC + 1.0;
+
+      vec2 pos = mix(ea.xy, eb.xy, aCoin.x) + nor * aCoin.y * rayon;
+      vTrav = aCoin.y * rayon;
+      vOp   = aStyle.y;
+
+      gl_Position = vec4(pos.x / uTaille.x * 2.0 - 1.0,
+                         1.0 - pos.y / uTaille.y * 2.0, 0.0, 1.0);
+    }`;
+
+  const FS_TRAIT = `
+    precision highp float;
+    varying float vTrav, vDemi, vCoC, vOp;
+    void main(){
+      float d = abs(vTrav);
+      float e = max(vCoC, 0.6);                    // largeur du dégradé
+      // Bord franc quand le flou est nul, bord étalé quand il est fort.
+      float a = 1.0 - smoothstep(max(vDemi - e, 0.0), vDemi + e, d);
+      // Conservation de l'énergie : plus le trait s'étale, plus il
+      // pâlit. À la lettre le rapport ferait disparaître le lointain,
+      // on en prend la racine pour qu'il reste lisible.
+      a *= sqrt(vDemi / (vDemi + vCoC));
+      gl_FragColor = vec4(vec3(0.82, 0.85, 0.90) * vOp * a, 1.0);
+    }`;
+
+  /* ---------- Programme 2 : aberration chromatique ---------- */
+  const VS_PLEIN = `
+    precision highp float;
+    attribute vec2 aP;
+    varying vec2 vUV;
+    void main(){ vUV = aP*0.5 + 0.5; gl_Position = vec4(aP, 0.0, 1.0); }`;
+
+  const FS_CA = `
+    precision highp float;
+    varying vec2 vUV;
+    uniform sampler2D uTex;
+    uniform float uCA;
+    void main(){
+      vec2 c = vUV - 0.5;
+      // Décalage radial : nul au centre, croissant vers les bords,
+      // exactement comme une aberration latérale d'objectif.
+      float r = uCA * dot(c, c);
+      float R = texture2D(uTex, vUV + c * r).r;
+      float V = texture2D(uTex, vUV        ).g;
+      float B = texture2D(uTex, vUV - c * r).b;
+      // Le noir doit rester transparent : la grille blueprint et la
+      // lueur centrale sont dessinées derrière ce canvas.
+      float a = clamp(max(R, max(V, B)), 0.0, 1.0);
+      gl_FragColor = vec4(R, V, B, a);
+    }`;
+
+  const progTrait = lier(VS_TRAIT, FS_TRAIT);
+  const progCA    = lier(VS_PLEIN, FS_CA);
+
+  const A = {
+    aA:    gl.getAttribLocation(progTrait, 'aA'),
+    aB:    gl.getAttribLocation(progTrait, 'aB'),
+    aCoin: gl.getAttribLocation(progTrait, 'aCoin'),
+    aStyle:gl.getAttribLocation(progTrait, 'aStyle')
+  };
+  const U = {};
+  for(const n of ['uTaille','uAngle','uTilt','uEch','uDecalY',
+                  'uFocus','uDemi','uForce','uMaxCoC'])
+    U[n] = gl.getUniformLocation(progTrait, n);
+  const UCA = {
+    tex: gl.getUniformLocation(progCA, 'uTex'),
+    ca:  gl.getUniformLocation(progCA, 'uCA')
+  };
+
+  /* ---------- Tampons ---------- */
+  const FLOTS = 10;                       // par sommet
+  const remplir = (segs) => {
+    const d = new Float32Array(segs.length * 6 * FLOTS);
+    let k = 0;
+    const coins = [[0,-1],[0,1],[1,-1],[1,-1],[0,1],[1,1]];
+    for(const s of segs)
+      for(const c of coins){
+        d[k++] = s.a[0]; d[k++] = s.a[1]; d[k++] = s.a[2];
+        d[k++] = s.b[0]; d[k++] = s.b[1]; d[k++] = s.b[2];
+        d[k++] = c[0];   d[k++] = c[1];
+        d[k++] = s.w;    d[k++] = s.al;
+      }
+    return d;
+  };
+
+  const bufStat = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufStat);
+  gl.bufferData(gl.ARRAY_BUFFER, remplir(statiques), gl.STATIC_DRAW);
+  const nStat = statiques.length * 6;
+
+  const bufDyn = gl.createBuffer();
+  let nDyn = 0;
+
+  const bufPlein = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufPlein);
+  gl.bufferData(gl.ARRAY_BUFFER,
+    new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+
+  /* ---------- Cible intermédiaire ---------- */
+  const texte = gl.createTexture();
+  const fbo   = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, texte);
+  for(const [p, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR],
+                       [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
+                       [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE],
+                       [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]])
+    gl.texParameteri(gl.TEXTURE_2D, p, v);
+
+  /* =========================================================
+     DIMENSIONS ET PILOTAGE
+     ========================================================= */
   let L = 0, H = 0, DPR = 1;
   const redim = () => {
     DPR = Math.min(devicePixelRatio || 1, 2);
-    L = hote.clientWidth; H = hote.clientHeight;
-    cv.width = L*DPR; cv.height = H*DPR;
-    cv.style.width = L+'px'; cv.style.height = H+'px';
-    ctx.setTransform(DPR,0,0,DPR,0,0);
-    bufs.forEach((b,i) => {
-      b.c.width  = Math.max(1, Math.round(L*DPR*ECH[i]));
-      b.c.height = Math.max(1, Math.round(H*DPR*ECH[i]));
-      b.x.setTransform(DPR*ECH[i], 0, 0, DPR*ECH[i], 0, 0);
-    });
+    L = hote.clientWidth || 1; H = hote.clientHeight || 1;
+    for(const c of [cv, tx]){ c.width = L*DPR; c.height = H*DPR; }
+    t2.setTransform(DPR, 0, 0, DPR, 0, 0);
+    gl.bindTexture(gl.TEXTURE_2D, texte);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, L*DPR, H*DPR, 0,
+                  gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+                            gl.TEXTURE_2D, texte, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   };
 
-  let angle = .70, tilt = .34;
-  // renvoie [x écran, y écran, profondeur]
-  const proj = (p) => {
-    const ca = Math.cos(angle), sa = Math.sin(angle);
-    const x = p[0]*ca - p[2]*sa, z = p[0]*sa + p[2]*ca;
-    const cb = Math.cos(tilt), sb = Math.sin(tilt);
-    const yy = p[1]*cb - z*sb, zz = p[1]*sb + z*cb;
-    const f = 3.4 / (3.4 + zz + 5.0);
-    const e = Math.min(L,H) * .55;
-    return [L/2 + x*f*e, H/2 - yy*f*e + H*.03, zz];
-  };
-
-  /* =========================================================
-     PILOTAGE
-     ========================================================= */
+  let angle = .70, tilt = .34, vivant = true, temps = 0;
   const lent = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const AUTO = .0009;
-  let vitesse = AUTO, tire = false, xP = 0, yP = 0, vivant = true, temps = 0;
+  let vitesse = AUTO, tire = false, xP = 0, yP = 0;
 
   hote.style.touchAction = 'none';
   hote.style.cursor = 'grab';
@@ -360,385 +584,212 @@ function holo(hote, graine){
     tilt = Math.max(-1.45, Math.min(1.45, tilt + dy*.0045));
   });
   const fin = () => { tire = false; hote.style.cursor = 'grab'; };
-  ['pointerup','pointercancel','pointerleave'].forEach(t => hote.addEventListener(t, fin));
+  ['pointerup','pointercancel','pointerleave'].forEach(n => hote.addEventListener(n, fin));
 
-  /* =========================================================
-     RENDU
-     ========================================================= */
-  // Aberration latérale : trois canaux purs qui se recomposent en
-  // blanc au centre et frangent en périphérie.
-  const CANAUX = [
-    { k: 1.0052, c:'rgb(255,0,0)' },
-    { k: 1.0000, c:'rgb(0,255,0)' },
-    { k: 0.9948, c:'rgb(0,0,255)' }
-  ];
-
-  // Le flou coûte cher : on l'écarte sur petit écran.
-  // Qualité adaptative. On mesure la durée des images ; si la cadence
-  // s'effondre durablement, le flou est abandonné plutôt que de faire
-  // ramer la page. Il revient si la machine respire à nouveau.
-  let cadence = 16, degrade = false;
-  const flouActif = () => L > 760 && !lent && !degrade;
-
-  // ctx.filter est ignoré par plusieurs moteurs lorsqu'on dessine en
-  // composition additive, ce qui est notre cas. On ne s'y fie plus :
-  // le flou est produit par un noyau de passes décalées, une méthode
-  // qui ne dépend d'aucune fonction du navigateur.
-
-  const trace = () => {
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.clearRect(0,0,L,H);
-    for(const b of bufs){
-      b.x.globalCompositeOperation = 'source-over';
-      b.x.clearRect(0,0,L,H);
-      b.x.globalCompositeOperation = 'lighter';
-    }
-    ctx.globalCompositeOperation = 'lighter';
-
-    for(const canal of CANAUX){
-      ctx.strokeStyle = canal.c; ctx.fillStyle = canal.c;
-      for(const b of bufs){ b.x.strokeStyle = canal.c; b.x.fillStyle = canal.c; }
-      dessine(canal.k);
-    }
-
-    // Réagrandissement des calques : le lissage bilinéaire du
-    // navigateur fait le flou, sans un seul tracé de plus.
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.save();
-    ctx.setTransform(1,0,0,1,0,0);
-    for(const b of bufs) ctx.drawImage(b.c, 0, 0, cv.width, cv.height);
-    ctx.restore();
-
-    ctx.globalCompositeOperation = 'source-over';
+  // Projection identique à celle du shader, pour placer le texte.
+  const ECH = () => Math.min(L, H) * .55;
+  const proj = (p) => {
+    const ca = Math.cos(angle), sa = Math.sin(angle);
+    const x = p[0]*ca - p[2]*sa, z1 = p[0]*sa + p[2]*ca;
+    const cb = Math.cos(tilt), sb = Math.sin(tilt);
+    const y = p[1]*cb - z1*sb, zz = p[1]*sb + z1*cb;
+    const f = 3.4 / (3.4 + zz + 5.0), e = ECH();
+    return [L/2 + x*f*e, H/2 - y*f*e + H*.03, zz];
   };
 
-  const dessine = (k) => {
-    const ab = q => [L/2 + (q[0]-L/2)*k, H/2 + (q[1]-H/2)*k, q[2]];
-    const pts = P.map(p => ab(proj(p)));
+  /* =========================================================
+     GÉOMÉTRIE RECALCULÉE À CHAQUE IMAGE
+     ========================================================= */
+  const dynamiques = () => {
+    const S = [];
 
-    // Cinq tranches réparties sur l'étendue réelle de profondeur,
-    // recalculée à chaque image. Le plan de netteté est au centre du
-    // volume ; le flou croît de part et d'autre. L'épaisseur et
-    // l'opacité sont compensées, sinon le trait ne devient pas flou,
-    // il s'évapore.
-    // Mise au point réglée sur le BÂTIMENT seul. Se baser sur toute
-    // la scène était l'erreur : la trame de sol, bien plus étendue,
-    // écrasait l'échelle et le bâtiment restait entièrement net.
-    let bMin = 1e9, bMax = -1e9;
-    for(let i = 0; i < pts.length; i++){
-      if(!estBati[i]) continue;
-      if(pts[i][2] < bMin) bMin = pts[i][2];
-      if(pts[i][2] > bMax) bMax = pts[i][2];
-    }
-    const zMid = (bMin + bMax) / 2;
-    const demi = Math.max(.30, (bMax - bMin) / 2.0);
-
-    let zMin = 1e9, zMax = -1e9;
-    for(const q of pts){ if(q[2] < zMin) zMin = q[2]; if(q[2] > zMax) zMax = q[2]; }
-
-    const flou = flouActif();
-
-
-    // cible 0 : image nette. 1 : calque doux. 2 : calque très flou.
-    const CIBLES = [ctx, bufs[0].x, bufs[1].x];
-    // Les calques ont un repère mis à l'échelle. Sans compenser
-    // l'épaisseur, un trait de 0,6 px n'en fait plus que 0,027 dans le
-    // calque le plus grossier : il n'est pas flou, il est absent.
-    const COMP = [1, 1/ECH[0], 1/ECH[1]];
-    const lot = (seg, alpha, lw, cible, dash) => {
-      const c = CIBLES[cible];
-      const k2 = COMP[cible];
-      if(dash){ c.setLineDash(dash.map(v => v*k2)); c.lineDashOffset = -temps*.02*k2; }
-      else c.setLineDash([]);
-      c.globalAlpha = Math.min(1, alpha);
-      c.lineWidth = lw * k2;
-      c.beginPath();
-      for(const [a,b] of seg){
-        c.moveTo(pts[a][0], pts[a][1]);
-        c.lineTo(pts[b][0], pts[b][1]);
-      }
-      c.stroke();
-      c.setLineDash([]);
-    };
-
-    // Chaque couche est parcourue UNE fois et ses segments rangés
-    // dans la tranche qui leur revient. On dessine ensuite tranche
-    // par tranche. C'est là que se joue la fluidité.
-    const couches = [
-      ...trameCour.map(t => ({ seg:t.seg, al:t.al, lw:.6 })),
-      { seg:resille, al:.22, lw:.5 },
-      { seg:cables,  al:.30, lw:.5, dash:[3,4] },
-      { seg:dalles,  al:.50, lw:.8 },
-      { seg:porteur, al:.68, lw:1.0 }
-    ];
-
-    // Chaque segment calcule SON flou, en continu. On les regroupe
-    // ensuite par valeur voisine, en huit crans, uniquement pour
-    // pouvoir tracer par lots. Aucun palier visible, et le nombre de
-    // tracés reste borné.
-    const Q = 6;
-    for(const co of couches){
-      const casiers = new Map();
-      for(const sgt of co.seg){
-        let n = 0;
-        if(flou){
-          const z = (pts[sgt[0]][2] + pts[sgt[1]][2]) / 2;
-          const d = Math.min(2, Math.abs((z - zMid) / demi));
-          // Courbe adoucie : progression régulière plutôt que
-          // brutale, et jamais tout à fait au maximum.
-          n = Math.min(.92, Math.pow(d, 1.5) * .52);
-        }
-        // deux cibles voisines au plus : net, doux, très flou
-        const paires = n < .5 ? [[0, 1 - n*2], [1, n*2]]
-                              : [[1, 2 - n*2], [2, n*2 - 1]];
-        for(const [cible, p] of paires){
-          if(p < .07) continue;
-          const cran = Math.min(Q, Math.max(1, Math.round(p * Q)));
-          const cle = cible * 16 + cran;
-          let liste = casiers.get(cle);
-          if(!liste) casiers.set(cle, liste = []);
-          liste.push(sgt);
-        }
-      }
-      for(const [cle, liste] of casiers)
-        lot(liste, co.al * ((cle % 16) / Q), co.lw, (cle / 16) | 0, co.dash);
-    }
-
-    // ---- Champ de courbes de niveau, animé -------------------
-    ctx.globalAlpha = .17; ctx.lineWidth = .5; ctx.setLineDash([]);
+    // Champ de courbes de niveau
     for(let c = 0; c < 6; c++){
       const r0 = .58 + c*.17;
-      ctx.beginPath();
+      let prec = null;
       for(let i = 0; i <= 96; i++){
         const a2 = i/96 * Math.PI*2;
         const r = r0
           + .085*Math.sin(3*a2 + temps*.0007 + c*.9)
           + .055*Math.sin(5*a2 - temps*.0005 + c*1.7)
           + .032*Math.sin(8*a2 + temps*.0009);
-        const q = ab(proj([Math.cos(a2)*r, SOL-.28, Math.sin(a2)*r]));
-        i ? ctx.lineTo(q[0],q[1]) : ctx.moveTo(q[0],q[1]);
-      }
-      ctx.stroke();
-    }
-
-    // ---- Couronne graduée en degrés --------------------------
-    ctx.globalAlpha = .26; ctx.lineWidth = .6;
-    ctx.beginPath();
-    for(const g of couronne){
-      const a1 = ab(proj(g.p)), a2 = ab(proj(g.q));
-      ctx.moveTo(a1[0],a1[1]); ctx.lineTo(a2[0],a2[1]);
-    }
-    ctx.stroke();
-    ctx.globalAlpha = .34;
-    ctx.font = '8px ui-monospace, monospace';
-    for(const g of couronne){
-      if(g.deg % 90) continue;
-      const a2 = ab(proj(g.q));
-      ctx.fillText(String(g.deg).padStart(3,'0'), a2[0]+3, a2[1]-3);
-    }
-
-    // ---- Cercles d'instrument --------------------------------
-    for(const inst of instruments){
-      const n = inst.pts.length;
-      const i0 = inst.arc ? Math.floor(inst.arc[0]*n) : 0;
-      const i1 = inst.arc ? Math.floor(inst.arc[1]*n) : n;
-
-      ctx.globalAlpha = inst.al; ctx.lineWidth = .6;
-      if(inst.dash){ ctx.setLineDash(inst.dash); ctx.lineDashOffset = -temps*.018; }
-      else ctx.setLineDash([]);
-      ctx.beginPath();
-      for(let i = i0; i <= i1; i++){
-        const q = ab(proj(inst.pts[i % n]));
-        i === i0 ? ctx.moveTo(q[0],q[1]) : ctx.lineTo(q[0],q[1]);
-      }
-      if(!inst.arc) ctx.closePath();
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      if(inst.ticks){
-        ctx.globalAlpha = inst.al * .8; ctx.lineWidth = .5;
-        ctx.beginPath();
-        const pas = Math.max(1, Math.floor(n / inst.ticks));
-        for(let i = i0; i < i1; i += pas){
-          const p = inst.pts[i % n];
-          const cx2 = 0, cy2 = SOL + .95, cz2 = 0;
-          const dx2 = p[0]-cx2, dy2 = p[1]-cy2, dz2 = p[2]-cz2;
-          const g = ((i/pas) % 5 === 0) ? 1.075 : 1.032;   // graduation renforcée
-          const a1 = ab(proj(p));
-          const a2 = ab(proj([cx2+dx2*g, cy2+dy2*g, cz2+dz2*g]));
-          ctx.moveTo(a1[0],a1[1]); ctx.lineTo(a2[0],a2[1]);
-        }
-        ctx.stroke();
-      }
-
-      // Crochets aux extrémités des secteurs partiels
-      if(inst.arc){
-        ctx.globalAlpha = inst.al * 1.5; ctx.lineWidth = .9;
-        ctx.beginPath();
-        for(const i of [i0, i1 - 1]){
-          const p = inst.pts[i % n];
-          const g = 1.11;
-          const a1 = ab(proj(p));
-          const a2 = ab(proj([p[0]*g, (p[1]-(SOL+.95))*g + SOL+.95, p[2]*g]));
-          ctx.moveTo(a1[0],a1[1]); ctx.lineTo(a2[0],a2[1]);
-        }
-        ctx.stroke();
+        const p = [Math.cos(a2)*r, SOL-.28, Math.sin(a2)*r];
+        if(prec) S.push({ a:prec, b:p, w:.8, al:.20 });
+        prec = p;
       }
     }
 
-    // ---- Gnomon XYZ ------------------------------------------
-    ctx.globalAlpha = .40; ctx.lineWidth = .9; ctx.setLineDash([]);
-    ctx.beginPath();
-    for(const ax of axes){
-      ctx.moveTo(pts[ax.a][0], pts[ax.a][1]);
-      ctx.lineTo(pts[ax.b][0], pts[ax.b][1]);
-    }
-    for(const [a,b] of gradAxes){
-      ctx.moveTo(pts[a][0], pts[a][1]); ctx.lineTo(pts[b][0], pts[b][1]);
-    }
-    ctx.stroke();
-    ctx.globalAlpha = .62;
-    ctx.font = '11px ui-monospace, monospace';
-    for(const ax of axes){
-      const q = pts[ax.b];
-      ctx.fillText(ax.lab, q[0] + 6, q[1] - 5);
+    // Câbles, en pointillés qui défilent
+    const ph = (temps * .0009) % 1;
+    for(const [ia, ib] of cables){
+      const a = P[ia], b = P[ib];
+      for(let k = 0; k < 7; k++){
+        const t0 = (k + ph) / 7, t1 = t0 + .052;
+        if(t1 > 1) continue;
+        S.push({
+          a: [a[0]+(b[0]-a[0])*t0, a[1]+(b[1]-a[1])*t0, a[2]+(b[2]-a[2])*t0],
+          b: [a[0]+(b[0]-a[0])*t1, a[1]+(b[1]-a[1])*t1, a[2]+(b[2]-a[2])*t1],
+          w: .9, al: .34 });
+      }
     }
 
-    // ---- Arcs spéculaires : l'élément qui accroche l'œil -------
-    // Le décalage des canaux y est volontairement exagéré : c'est
-    // sur les hautes lumières que l'aberration se voit le plus.
-    const kSpec = 1 + (k - 1) * 3.4;
-    const abS = q => [L/2 + (q[0]-L/2)*kSpec, H/2 + (q[1]-H/2)*kSpec];
-    // Choix du calque selon la profondeur, pour que les éléments
-    // lumineux soient eux aussi soumis à la profondeur de champ.
-    const calquePour = (p3) => {
-      if(!flou) return 0;
-      const z = proj(p3)[2];
-      const d = Math.min(2, Math.abs((z - zMid) / demi));
-      const n = Math.min(.92, Math.pow(d, 1.5) * .52);
-      return n < .30 ? 0 : (n < .66 ? 1 : 2);
-    };
-
-    ctx.lineCap = 'round';
+    // Arcs spéculaires : la lumière glisse le long de l'anneau
     for(const arc of arcs){
-      const ph = (temps * arc.v + arc.ph) % 1;      // la lumière glisse
-      const n  = arc.pts.length;
-      const i0 = Math.floor(ph * n);
-      // Cinq tronçons au lieu de treize : le fondu reste lisible et
-      // le coût est divisé par presque trois.
-      const len = 15, TR = 5;
-      const cq = calquePour(arc.pts[i0 % n]);
-      const cc = CIBLES[cq], kk = COMP[cq];
-      cc.lineCap = 'round';
-      for(let t2 = 0; t2 < TR; t2++){
-        const g = Math.sin((t2 + .5) / TR * Math.PI);
-        cc.globalAlpha = .95 * g;
-        cc.lineWidth = (.8 + 2.1 * g) * kk;
-        cc.beginPath();
-        for(let j = Math.floor(t2*len/TR); j <= Math.floor((t2+1)*len/TR); j++){
-          const q = abS(proj(arc.pts[(i0 + j) % n]));
-          j === Math.floor(t2*len/TR) ? cc.moveTo(q[0],q[1]) : cc.lineTo(q[0],q[1]);
-        }
-        cc.stroke();
+      const n = arc.pts.length;
+      const i0 = Math.floor(((temps*arc.v + arc.ph) % 1) * n);
+      for(let j = 0; j < 15; j++){
+        const g = Math.sin((j + .5)/15 * Math.PI);
+        S.push({ a: arc.pts[(i0+j) % n], b: arc.pts[(i0+j+1) % n],
+                 w: .9 + 2.6*g, al: .30 + 1.5*g });
       }
-      cc.lineCap = 'butt';
-      // le reste de l'arc, à peine visible
-      ctx.globalAlpha = .13; ctx.lineWidth = .5;
-      ctx.beginPath();
-      arc.pts.forEach((p,i) => {
-        const q = ab(proj(p));
-        i ? ctx.lineTo(q[0],q[1]) : ctx.moveTo(q[0],q[1]);
-      });
-      ctx.stroke();
+      for(let i = 0; i < n; i += 2)
+        S.push({ a: arc.pts[i], b: arc.pts[(i+1) % n], w:.8, al:.10 });
     }
 
-    // ---- Éclats prismatiques ----------------------------------
-    for(const e of eclats){
-      const q = abS(proj(e.p));
-      const g = .35 + .65 * Math.abs(Math.sin(temps * .0011 + e.ph));
-      const cq = calquePour(e.p), cc = CIBLES[cq], kk = COMP[cq];
-      cc.globalAlpha = .9 * g;
-      cc.lineWidth = 2.4 * kk;
-      cc.lineCap = 'round';
-      cc.beginPath();
-      cc.moveTo(q[0] - Math.cos(e.ang)*e.l/2, q[1] - Math.sin(e.ang)*e.l/2);
-      cc.lineTo(q[0] + Math.cos(e.ang)*e.l/2, q[1] + Math.sin(e.ang)*e.l/2);
-      cc.stroke();
-      cc.lineCap = 'butt';
-    }
-    ctx.lineCap = 'butt';
-
-    // ---- Ancres : réagissent à l'orientation, et clignotent ----
-    ctx.font = '9px ui-monospace, monospace';
+    // Réticules des ancres
     for(const an of ancres){
-      const q = pts[an.idx]; if(!q) continue;
-      const cachee = q[2] > .28;                       // passée derrière
+      const q = proj(P[an.idx]);
+      const cachee = q[2] > .28;
       const bat = .55 + .45*Math.sin(temps*.004 + an.phase);
-      const al  = cachee ? .10 : .30 + .28*bat;
-      ctx.globalAlpha = al;
-      ctx.lineWidth = cachee ? .5 : .8;
-
-      const x = q[0], y = q[1], s = cachee ? 5 : 8;
-      ctx.beginPath();
-      ctx.moveTo(x-s,y-s+3); ctx.lineTo(x-s,y-s); ctx.lineTo(x-s+3,y-s);
-      ctx.moveTo(x+s-3,y-s); ctx.lineTo(x+s,y-s); ctx.lineTo(x+s,y-s+3);
-      ctx.moveTo(x-s,y+s-3); ctx.lineTo(x-s,y+s); ctx.lineTo(x-s+3,y+s);
-      ctx.moveTo(x+s-3,y+s); ctx.lineTo(x+s,y+s); ctx.lineTo(x+s,y+s-3);
-      ctx.stroke();
-
-      if(!cachee){
-        // Relevé en coordonnées écran normalisées, comme une station
-        // de poursuite : la valeur change à chaque image.
-        const X = (x/L).toFixed(2), Y = (y/H).toFixed(2);
-        const Z = (1 - (q[2]+2.6)/5.2).toFixed(2);
-        const etat = bat > .82 ? 'VERROU' : 'SUIVI';
-        ctx.globalAlpha = .30 + .34*bat;
-        ctx.fillText(`P${String(an.n).padStart(2,'0')} · X${X} Y${Y} Z${Z} · ${etat}`,
-                     x - 4, y - s - 7);
+      an.vis = !cachee; an.bat = bat; an.ecran = q;
+      const p = P[an.idx], s = (cachee ? .035 : .055);
+      const al = cachee ? .14 : .34 + .30*bat;
+      for(const [sx, sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){
+        S.push({ a:[p[0]+sx*s, p[1]+sy*s, p[2]], b:[p[0]+sx*s*.42, p[1]+sy*s, p[2]], w:1.1, al });
+        S.push({ a:[p[0]+sx*s, p[1]+sy*s, p[2]], b:[p[0]+sx*s, p[1]+sy*s*.42, p[2]], w:1.1, al });
       }
     }
 
-    // ---- Croix de visée au centre -----------------------------
-    ctx.globalAlpha = .22; ctx.lineWidth = .6;
-    ctx.beginPath();
-    ctx.moveTo(L/2-9, H/2); ctx.lineTo(L/2-3, H/2);
-    ctx.moveTo(L/2+3, H/2); ctx.lineTo(L/2+9, H/2);
-    ctx.moveTo(L/2, H/2-9); ctx.lineTo(L/2, H/2-3);
-    ctx.moveTo(L/2, H/2+3); ctx.lineTo(L/2, H/2+9);
-    ctx.stroke();
-
-    ctx.globalAlpha = 1;
+    // Éclats prismatiques
+    for(const e of eclats){
+      const g = .35 + .65*Math.abs(Math.sin(temps*.0011 + e.ph));
+      const l = e.l * .0022;
+      S.push({ a:[e.p[0]-Math.cos(e.ang)*l, e.p[1]-Math.sin(e.ang)*l, e.p[2]],
+               b:[e.p[0]+Math.cos(e.ang)*l, e.p[1]+Math.sin(e.ang)*l, e.p[2]],
+               w: 2.6, al: .5 + 1.3*g });
+    }
+    return S;
   };
 
-  let tPrec = 0;
+  /* =========================================================
+     TEXTE
+     ========================================================= */
+  const dessineTexte = () => {
+    t2.clearRect(0, 0, L, H);
+    t2.fillStyle = 'rgba(210,216,224,1)';
+    t2.font = '9px ui-monospace, "SFMono-Regular", monospace';
+
+    for(const g of couronne){
+      if(g.deg % 90) continue;
+      const q = proj(g.q);
+      t2.globalAlpha = .34;
+      t2.fillText(String(g.deg).padStart(3,'0'), q[0]+3, q[1]-3);
+    }
+    t2.font = '11px ui-monospace, monospace';
+    for(const ax of axes){
+      const q = proj(P[ax.b]);
+      t2.globalAlpha = .60;
+      t2.fillText(ax.lab, q[0]+6, q[1]-5);
+    }
+    t2.font = '9px ui-monospace, monospace';
+    for(const an of ancres){
+      if(!an.vis || !an.ecran) continue;
+      const q = an.ecran;
+      const X = (q[0]/L).toFixed(2), Y = (q[1]/H).toFixed(2);
+      const Z = (1 - (q[2]+2.6)/5.2).toFixed(2);
+      t2.globalAlpha = .30 + .34*an.bat;
+      t2.fillText(`P${String(an.n).padStart(2,'0')} · X${X} Y${Y} Z${Z} · `
+                  + (an.bat > .82 ? 'VERROU' : 'SUIVI'), q[0] - 4, q[1] - 16);
+    }
+    t2.globalAlpha = 1;
+  };
+
+  /* =========================================================
+     BOUCLE
+     ========================================================= */
+  const posAttr = (loc, taille, decalage) => {
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, taille, gl.FLOAT, false, FLOTS*4, decalage*4);
+  };
+
+  const rendu = () => {
+    const W = L*DPR, Ht = H*DPR;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.viewport(0, 0, W, Ht);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);          // additif, comme des lumières
+
+    gl.useProgram(progTrait);
+    gl.uniform2f(U.uTaille, L, H);
+    gl.uniform1f(U.uAngle, angle);
+    gl.uniform1f(U.uTilt, tilt);
+    gl.uniform1f(U.uEch, ECH());
+    gl.uniform1f(U.uDecalY, H*.03);
+
+    // ---- LES TROIS RÉGLAGES DE LA PROFONDEUR DE CHAMP ----
+    // uDemi  : largeur de la zone nette. Monter pour élargir.
+    // uForce : vitesse à laquelle le flou monte hors de cette zone.
+    // uMaxCoC: rayon de flou maximal, en pixels.
+    gl.uniform1f(U.uFocus, Math.sin(tilt) * (SOL + .95));  // centre du bâtiment
+    gl.uniform1f(U.uDemi,   1.15);
+    gl.uniform1f(U.uForce,  5.5);
+    gl.uniform1f(U.uMaxCoC, 14.0);
+
+    const tracer = (buf, n) => {
+      if(!n) return;
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      posAttr(A.aA, 3, 0); posAttr(A.aB, 3, 3);
+      posAttr(A.aCoin, 2, 6); posAttr(A.aStyle, 2, 8);
+      gl.drawArrays(gl.TRIANGLES, 0, n);
+    };
+    tracer(bufStat, nStat);
+
+    const dyn = dynamiques();
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufDyn);
+    gl.bufferData(gl.ARRAY_BUFFER, remplir(dyn), gl.DYNAMIC_DRAW);
+    nDyn = dyn.length * 6;
+    tracer(bufDyn, nDyn);
+
+    // Aberration chromatique sur l'image entière
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, W, Ht);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.disable(gl.BLEND);
+    gl.useProgram(progCA);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texte);
+    gl.uniform1i(UCA.tex, 0);
+    gl.uniform1f(UCA.ca, .030);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufPlein);
+    const ap = gl.getAttribLocation(progCA, 'aP');
+    gl.enableVertexAttribArray(ap);
+    gl.vertexAttribPointer(ap, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    dessineTexte();
+  };
+
   const boucle = (t) => {
     if(!vivant) return;
-    if(tPrec){
-      const dt = Math.min(200, t - tPrec);
-      cadence += (dt - cadence) * .06;          // moyenne glissante
-      if(!degrade && cadence > 34) degrade = true;   // sous ~29 images/s
-      else if(degrade && cadence < 20) degrade = false;
-    }
-    tPrec = t;
     temps = t || 0;
     if(!tire && !lent){
       vitesse += (AUTO - vitesse) * .035;
       angle += vitesse;
     }
-    trace();
+    rendu();
     requestAnimationFrame(boucle);
   };
 
-  addEventListener('resize', () => { redim(); trace(); });
+  addEventListener('resize', () => { redim(); });
   redim();
   requestAnimationFrame(boucle);
 
   return {
     arrete(){ vivant = false; },
     reprend(){ if(!vivant){ vivant = true; requestAnimationFrame(boucle); } },
-    stats(){ return { sommets:P.length,
-      aretes:porteur.length+dalles.length+resille.length+cables.length+trame.length,
-      ancres:ancres.length }; }
+    stats(){ return { segmentsFixes: statiques.length, sommets: P.length }; }
   };
 }
