@@ -40,150 +40,135 @@ function holo(hote, graine){
   const quad = (c,a,b,d,e) => { sg(c,a,b); sg(c,b,d); sg(c,d,e); sg(c,e,a); };
 
   /* ---------------------------------------------------------
-     Deux tours reliées par des passerelles. Planchers, baies,
-     entrée, exosquelette de contreventement, couronnement, et des
-     fenêtres qui s'allument.
+     Tour vrillée à plateaux arrondis.
+
+     Vocabulaire retenu : plan en superellipse, donc des angles
+     toujours arrondis ; plateaux très rapprochés qui strient le
+     volume ; vrillage progressif sur la hauteur ; évasement en
+     pied ; socle en plateaux organiques débordants ; arêtes
+     lumineuses continues. Aucune arête vive, aucune toiture.
      --------------------------------------------------------- */
   const SOL = -1.15;
-  const lumieres = [];                 // baies allumées, animées ensuite
+  const lumieres = [];
 
-  // Tourne un point autour de l'axe vertical de la tour
-  const tourne = (x, z, a) => [x*Math.cos(a) - z*Math.sin(a),
-                               x*Math.sin(a) + z*Math.cos(a)];
-
-  const batir = (cx, cz, LG, PR, N, HE, rot, effil, nBaies) => {
-    const niveaux = [];
-    for(let i = 0; i <= N; i++){
-      const k = 1 - effil * Math.pow(i/N, 1.25);
-      const y = SOL + (i ? .34 : 0) + i*HE;      // rez-de-chaussée plus haut
-      const c = [];
-      for(const [sx, sz] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
-        const [x, z] = tourne(sx*LG*k, sz*PR*k, rot);
-        c.push(pt(cx + x, y, cz + z));
-      }
-      niveaux.push({ c, y, k });
+  // Superellipse : le rayon d'angle est ce qui distingue un plateau
+  // arrondi d'une simple dalle rectangulaire.
+  const NP = 44;
+  const plateau = (cx, cz, rx, rz, y, rot, galbe) => {
+    const pts = [];
+    for(let i = 0; i < NP; i++){
+      const t = i/NP * Math.PI*2;
+      const c = Math.cos(t), s2 = Math.sin(t);
+      const e = 2 / galbe;
+      const x = rx * Math.sign(c) * Math.pow(Math.abs(c), e);
+      const z = rz * Math.sign(s2) * Math.pow(Math.abs(s2), e);
+      const X = x*Math.cos(rot) - z*Math.sin(rot);
+      const Z = x*Math.sin(rot) + z*Math.cos(rot);
+      pts.push(pt(cx + X, y, cz + Z));
     }
-
-    for(let i = 0; i < niveaux.length; i++){
-      const n = niveaux[i];
-      // Plancher, en trait marqué : c'est lui qui dit « immeuble »
-      for(let m = 0; m < 4; m++) sg(dalles, n.c[m], n.c[(m+1)%4]);
-      if(i === niveaux.length - 1) break;
-      const h = niveaux[i+1];
-
-      // Poteaux d'angle
-      for(let m = 0; m < 4; m++) sg(porteur, n.c[m], h.c[m]);
-
-      // Baies vitrées, en bandeau sur les quatre façades
-      const bas = n.y + (i ? .045 : .09), haut = h.y - .035;
-      for(let fa = 0; fa < 4; fa++){
-        const A = P[n.c[fa]], B = P[n.c[(fa+1)%4]];
-        const nb = (i === 0) ? Math.max(2, nBaies - 1) : nBaies;
-        for(let w = 0; w < nb; w++){
-          // Le rez-de-chaussée de la façade avant reçoit l'entrée
-          if(i === 0 && fa === 0 && w === Math.floor(nb/2)) continue;
-          const t0 = (w + .20)/nb, t1 = (w + .80)/nb;
-          const p0 = [A[0]+(B[0]-A[0])*t0, 0, A[2]+(B[2]-A[2])*t0];
-          const p1 = [A[0]+(B[0]-A[0])*t1, 0, A[2]+(B[2]-A[2])*t1];
-          const q = [ pt(p0[0], bas, p0[2]), pt(p1[0], bas, p1[2]),
-                      pt(p1[0], haut, p1[2]), pt(p0[0], haut, p0[2]) ];
-          for(let m = 0; m < 4; m++) sg(resille, q[m], q[(m+1)%4]);
-          // meneau central
-          sg(resille, pt((p0[0]+p1[0])/2, bas,  (p0[2]+p1[2])/2),
-                      pt((p0[0]+p1[0])/2, haut, (p0[2]+p1[2])/2));
-          if((i*7 + fa*3 + w) % 5 === 0)
-            lumieres.push([(p0[0]+p1[0])/2, (bas+haut)/2, (p0[2]+p1[2])/2]);
-        }
-      }
-
-      // Exosquelette : croix de Saint-André tous les trois niveaux
-      if(i % 3 === 0 && i + 3 < niveaux.length){
-        const t = niveaux[i+3];
-        for(let m = 0; m < 4; m++){
-          sg(porteur, n.c[m], t.c[(m+1)%4]);
-          sg(porteur, n.c[(m+1)%4], t.c[m]);
-        }
-        for(let m = 0; m < 4; m++) sg(porteur, t.c[m], t.c[(m+1)%4]);
-      }
-    }
-    return niveaux;
+    return pts;
   };
 
-  // Deux tours de hauteurs différentes, la seconde tournée
-  const TA = batir(-.52, -.06, .40, .30, 17, .155, 0,    .30, 4);
-  const TB = batir( .58,  .16, .30, .24, 11, .155, .38,  .26, 3);
-
-  /* --- Passerelles entre les deux tours --- */
-  const passerelle = (na, nb2, ep) => {
-    const a = TA[na], b = TB[nb2];
-    const A0 = P[a.c[1]], A1 = P[a.c[2]];
-    const B0 = P[b.c[0]], B1 = P[b.c[3]];
-    const q = [ pt(A0[0], a.y, A0[2]), pt(B0[0], b.y, B0[2]),
-                pt(B1[0], b.y, B1[2]), pt(A1[0], a.y, A1[2]) ];
-    const h = q.map(k => pt(P[k][0], P[k][1] + ep, P[k][2]));
-    for(let m = 0; m < 4; m++){
-      sg(dalles, q[m], q[(m+1)%4]);
-      sg(dalles, h[m], h[(m+1)%4]);
-      sg(porteur, q[m], h[m]);
-    }
-    // vitrage longitudinal et raidisseurs sous tablier
-    for(let w = 1; w < 7; w++){
-      const t = w/7;
-      for(const [u, v] of [[0,1],[3,2]])
-        sg(resille,
-           pt(P[q[u]][0]+(P[q[v]][0]-P[q[u]][0])*t, P[q[u]][1]+(P[q[v]][1]-P[q[u]][1])*t + ep*.28,
-              P[q[u]][2]+(P[q[v]][2]-P[q[u]][2])*t),
-           pt(P[h[u]][0]+(P[h[v]][0]-P[h[u]][0])*t, P[h[u]][1]+(P[h[v]][1]-P[h[u]][1])*t - ep*.18,
-              P[h[u]][2]+(P[h[v]][2]-P[h[u]][2])*t));
-    }
-    sg(porteur, q[0], h[1]); sg(porteur, q[1], h[0]);
-    return h;
-  };
-  const PASS = [ passerelle(4, 4, .17), passerelle(8, 8, .17), passerelle(11, 11, .17) ];
-
-  /* --- Entrée : auvent, portes, emmarchement --- */
-  const yE = SOL;
-  const auv = [];
-  for(const [x, z] of [[-.86,-.50],[-.18,-.50],[-.18,-.30],[-.86,-.30]])
-    auv.push(pt(x, yE + .30, z));
-  for(let m = 0; m < 4; m++) sg(dalles, auv[m], auv[(m+1)%4]);
-  for(const k of [0, 1]) sg(porteur, auv[k], pt(P[auv[k]][0], yE, P[auv[k]][2]));
-  // deux vantaux
-  for(const dx of [-.14, .02]){
-    const q = [ pt(-.52+dx, yE, -.36), pt(-.40+dx, yE, -.36),
-                pt(-.40+dx, yE+.22, -.36), pt(-.52+dx, yE+.22, -.36) ];
-    for(let m = 0; m < 4; m++) sg(resille, q[m], q[(m+1)%4]);
-    lumieres.push([-.46+dx, yE+.11, -.36]);
+  /* ---- La tour ---- */
+  const NIV = 38, HT = 2.55, VRILLE = 2.15;   // 123° de vrillage
+  const etages = [];
+  for(let i = 0; i <= NIV; i++){
+    const t = i/NIV;
+    const y = SOL + t*HT;
+    // Évasement en pied, puis effilement, puis léger renflement haut
+    const evase = 1 + .95 * Math.exp(-t*7.5);
+    const fil   = 1 - .34 * Math.pow(t, 1.6) + .10 * Math.pow(t, 3.4);
+    const k = evase * fil;
+    const rot = t*VRILLE + .35*Math.sin(t*3.1);   // le vrillage respire
+    etages.push({ pts: plateau(0, 0, .34*k, .25*k, y, rot, 3.4), y, t, k });
   }
-  // marches
-  for(let m = 0; m < 4; m++)
-    sg(resille, pt(-.90, yE - m*.035, -.52 - m*.045),
-                pt(-.14, yE - m*.035, -.52 - m*.045));
 
-  /* --- Couronnement : mât, haubans, feux --- */
-  const sommetA = TA[TA.length-1];
-  const mat = pt(-.52, P[sommetA.c[0]][1] + .52, -.06);
-  for(let m = 0; m < 4; m++) sg(porteur, sommetA.c[m], mat);
-  for(let a = 0; a < 3; a++){
-    const y = P[sommetA.c[0]][1] + .16 + a*.14, r = .13 - a*.035, an = [];
-    for(let m = 0; m < 8; m++){
-      const th = m/8*Math.PI*2;
-      an.push(pt(-.52 + Math.cos(th)*r, y, -.06 + Math.sin(th)*r));
-    }
-    for(let m = 0; m < 8; m++) sg(resille, an[m], an[(m+1)%8]);
+  // Les plateaux, très rapprochés : c'est cette striation horizontale
+  // qui donne la peau du bâtiment.
+  for(const e of etages)
+    for(let i = 0; i < NP; i++) sg(dalles, e.pts[i], e.pts[(i+1)%NP]);
+
+  // Nervures verticales : elles suivent le vrillage et deviennent
+  // donc des spirales. Ce sont elles qui racontent la torsion.
+  const NERV = 14;
+  for(let n = 0; n < NERV; n++){
+    const i = Math.round(n * NP / NERV);
+    for(let e = 0; e < NIV; e++)
+      sg(porteur, etages[e].pts[i], etages[e+1].pts[i]);
   }
-  const feux = [ [-.52, P[mat][1], -.06],
-                 [P[sommetA.c[0]][0], P[sommetA.c[0]][1], P[sommetA.c[0]][2]],
-                 [P[TB[TB.length-1].c[2]][0], P[TB[TB.length-1].c[2]][1], P[TB[TB.length-1].c[2]][2]] ];
+  // Meneaux courts, un plateau sur deux, sur toute la circonférence
+  for(let e = 0; e < NIV; e += 2)
+    for(let i = 0; i < NP; i += 2){
+      sg(resille, etages[e].pts[i], etages[e+1].pts[i]);
+      if((e*5 + i) % 9 === 0){
+        const a = P[etages[e].pts[i]], b = P[etages[e+1].pts[i]];
+        lumieres.push([(a[0]+b[0])/2, (a[1]+b[1])/2, (a[2]+b[2])/2]);
+      }
+    }
 
-  /* --- Ancres accrochées aux points remarquables --- */
-  const REMARQUABLES = [ TA[2].c[1], TA[6].c[0], TA[11].c[2], TA[16].c[3],
-                         TB[3].c[1], TB[9].c[2] ];
+  /* ---- Arêtes lumineuses continues, en spirale ---- */
+  const filsLumiere = [];
+  for(const dep of [3, 18, 31]){
+    const fil = [];
+    for(let e = 0; e <= NIV; e++)
+      fil.push(P[etages[e].pts[(dep + Math.round(e*.55)) % NP]]);
+    filsLumiere.push(fil);
+  }
+
+  /* ---- Porte-à-faux : trois plateaux qui s'échappent ---- */
+  for(const [niv, ang, port] of [[9, .6, 1.9], [19, 3.4, 1.6], [28, 5.5, 1.35]]){
+    const e = etages[niv];
+    const dx = Math.cos(ang), dz = Math.sin(ang);
+    for(const dy of [0, .085]){
+      const p = plateau(dx*.20*port, dz*.20*port,
+                        .34*e.k*port*.62, .25*e.k*port*.62,
+                        e.y + dy, ang, 3.0);
+      for(let i = 0; i < NP; i++) sg(dalles, p[i], p[(i+1)%NP]);
+      if(dy === 0) for(let i = 0; i < NP; i += 4) sg(resille, p[i], e.pts[i]);
+    }
+  }
+
+  /* ---- Socle : plateaux organiques débordants ---- */
+  const socle = [];
+  for(let k = 0; k < 4; k++){
+    const y = SOL - .10 + k*.13;
+    const g = 1 - k*.13;
+    const p = plateau(-.06, .04, 1.02*g, .78*g, y, -.5 + k*.22, 2.6);
+    socle.push(p);
+    for(let i = 0; i < NP; i++) sg(dalles, p[i], p[(i+1)%NP]);
+    if(k) for(let i = 0; i < NP; i += 3) sg(resille, socle[k-1][i], p[i]);
+  }
+  // Vitrage du socle, en bandeau continu
+  for(let i = 0; i < NP; i += 2) sg(resille, socle[0][i], socle[3][i]);
+
+  /* ---- Entrée : une échancrure dans le socle, pas une porte plate ---- */
+  for(let i = 20; i <= 26; i++){
+    const a = P[socle[3][i]];
+    const bas = pt(a[0]*1.02, SOL - .17, a[2]*1.02);
+    sg(porteur, socle[3][i], bas);
+    if(i % 2 === 0) lumieres.push([a[0]*1.02, SOL - .06, a[2]*1.02]);
+  }
+  for(let i = 20; i < 26; i++)
+    sg(resille, pt(P[socle[3][i]][0]*1.02, SOL - .17, P[socle[3][i]][2]*1.02),
+                pt(P[socle[3][i+1]][0]*1.02, SOL - .17, P[socle[3][i+1]][2]*1.02));
+
+  /* ---- Couronnement : le sommet est évidé, jamais pointu ---- */
+  const cime = etages[NIV];
+  const oeil = plateau(0, 0, .34*cime.k*.42, .25*cime.k*.42,
+                       cime.y - .07, VRILLE, 3.4);
+  for(let i = 0; i < NP; i++) sg(dalles, oeil[i], oeil[(i+1)%NP]);
+  for(let i = 0; i < NP; i += 3) sg(resille, cime.pts[i], oeil[i]);
+
+  const feux = [];
+  for(let i = 0; i < NP; i += Math.round(NP/3))
+    feux.push([P[cime.pts[i]][0], P[cime.pts[i]][1], P[cime.pts[i]][2]]);
+
+  /* ---- Ancres ---- */
+  const REMARQUABLES = [ etages[2].pts[6], etages[9].pts[20], etages[16].pts[34],
+                         etages[24].pts[10], etages[31].pts[26], etages[NIV].pts[0] ];
   for(let i = 0; i < REMARQUABLES.length; i++)
     ancres.push({ idx: REMARQUABLES[i], phase: alea()*6.28, n: i+1,
-                  h: (P[REMARQUABLES[i]][1] - SOL) * 62 });
-
-  const volumes = [];          // plus de volumes flottants
+                  h: (P[REMARQUABLES[i]][1] - SOL) * 74 });
 
   /* --- Gnomon : les trois axes du relevé --- */
   const AX = 1.30;
@@ -629,6 +614,18 @@ function holo(hote, graine){
         const p = [Math.cos(a2)*r, SOL-.28, Math.sin(a2)*r];
         if(prec) S.push({ a:prec, b:p, w:.8, al:.34, fam:1 });
         prec = p;
+      }
+    }
+
+    // Arêtes lumineuses : une onde remonte chaque spirale, comme les
+    // lignes continues des références.
+    for(let k = 0; k < filsLumiere.length; k++){
+      const fil = filsLumiere[k], n = fil.length;
+      for(let i = 0; i < n - 1; i++){
+        const u = i/(n-1);
+        const onde = Math.pow(Math.max(0, Math.sin(u*4.2 - temps*.0011 + k*2.1)), 3);
+        S.push({ a: fil[i], b: fil[i+1],
+                 w: .9 + 2.4*onde, al: .34 + 1.9*onde, fam: 2 });
       }
     }
 
