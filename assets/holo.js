@@ -155,17 +155,34 @@ function holo(hote, graine){
     for(let i = 0; i < 16; i += 4) sg(cables, prev[i], matHaut[i % 4]);
   }
 
-  /* --- Couronnement : treillis pyramidal au sommet du mât --- */
-  const cime = pt(0, SOL + HAUT + .30, 0);
-  const cour = [];
-  for(let i = 0; i < 8; i++){
-    const t = i/8 * Math.PI*2, r = .30;
-    cour.push(pt(Math.cos(t)*r, SOL + HAUT + .02, Math.sin(t)*r));
+  /* --- Couronnement : plateforme annulaire ouverte, et un disque
+         en lévitation au-dessus. Aucun sommet, aucune pointe. --- */
+  const yC = SOL + HAUT + .06;
+  const cInt = [], cExt = [];
+  for(let i = 0; i < 12; i++){
+    const t = i/12 * Math.PI*2;
+    cInt.push(pt(Math.cos(t)*.24, yC, Math.sin(t)*.24));
+    cExt.push(pt(Math.cos(t)*.62, yC, Math.sin(t)*.62));
   }
-  for(let i = 0; i < 8; i++){
-    sg(porteur, cour[i], cour[(i+1)%8]);
-    sg(resille, cour[i], cime);
-    sg(resille, cour[i], matHaut[i % 4]);
+  for(let i = 0; i < 12; i++){
+    sg(porteur, cExt[i], cExt[(i+1)%12]);
+    sg(resille, cInt[i], cInt[(i+1)%12]);
+    sg(resille, cInt[i], cExt[i]);                 // rayons
+    sg(resille, cInt[i], cExt[(i+1)%12]);          // contreventement
+    if(i % 3 === 0) sg(resille, cExt[i], matHaut[(i/3) % 4]);
+  }
+  // Disque suspendu, détaché de la structure
+  const dInt = [], dExt = [];
+  for(let i = 0; i < 12; i++){
+    const t = i/12 * Math.PI*2;
+    dInt.push(pt(Math.cos(t)*.16, yC + .42, Math.sin(t)*.16));
+    dExt.push(pt(Math.cos(t)*.44, yC + .42, Math.sin(t)*.44));
+  }
+  for(let i = 0; i < 12; i++){
+    sg(dalles, dExt[i], dExt[(i+1)%12]);
+    sg(resille, dInt[i], dInt[(i+1)%12]);
+    sg(resille, dInt[i], dExt[i]);
+    if(i % 4 === 0) sg(cables, dInt[i], cInt[i]);  // trois haubans seulement
   }
 
   /* --- Pilotis : le bâtiment ne touche pas le sol --- */
@@ -217,6 +234,34 @@ function holo(hote, graine){
     couronne.push({ deg:d, p:[Math.cos(t)*r, SOL-.30, Math.sin(t)*r],
                     q:[Math.cos(t)*(r + (d%45 ? .05 : .13)), SOL-.30, Math.sin(t)*(r + (d%45 ? .05 : .13))] });
   }
+
+  /* --- Cercles d'instrument : grandes couronnes graduées qui
+         encerclent le bâtiment selon des plans différents. --- */
+  const instruments = [];
+  const cercle = (r, incl, azi, ticks, opts={}) => {
+    const pts = [], n = 132;
+    for(let i = 0; i < n; i++){
+      const t = i/n * Math.PI*2;
+      let q = [Math.cos(t)*r, 0, Math.sin(t)*r];
+      // basculement puis rotation propre du plan
+      const c1 = Math.cos(incl), s1 = Math.sin(incl);
+      q = [q[0], q[1]*c1 - q[2]*s1, q[1]*s1 + q[2]*c1];
+      const c2 = Math.cos(azi), s2 = Math.sin(azi);
+      q = [q[0]*c2 - q[2]*s2, q[1], q[0]*s2 + q[2]*c2];
+      pts.push([q[0], q[1] + SOL + .95, q[2]]);
+    }
+    instruments.push({ pts, ticks, r,
+      dash: opts.dash || null, al: opts.al ?? .24,
+      arc: opts.arc || null, vit: opts.vit || 0 });
+  };
+  cercle(1.62, .12, 0,    120, { al:.30 });
+  cercle(1.34, 1.42, .5,   60, { al:.22 });
+  cercle(1.86, .82, 2.1,   36, { al:.20, dash:[5,7] });
+  cercle(1.12, 1.05, 4.0,  90, { al:.26 });
+  cercle(2.02, 1.50, 1.2,   0, { al:.16, dash:[2,9] });
+  // deux secteurs partiels, avec crochets aux extrémités
+  cercle(1.48, .55, 3.1,   24, { al:.34, arc:[.06,.30] });
+  cercle(1.72, 1.20, 5.4,  24, { al:.34, arc:[.58,.76] });
 
   /* --- Arcs spéculaires : portions d'anneau éclairées --- */
   const arcs = [];
@@ -282,7 +327,7 @@ function holo(hote, graine){
     xP = e.clientX; yP = e.clientY;
     vitesse = dx * .0055;
     angle += vitesse;
-    tilt = Math.max(-.12, Math.min(1.15, tilt + dy*.0035));
+    tilt = Math.max(-1.45, Math.min(1.45, tilt + dy*.0045));
   });
   const fin = () => { tire = false; hote.style.cursor = 'grab'; };
   ['pointerup','pointercancel','pointerleave'].forEach(t => hote.addEventListener(t, fin));
@@ -414,6 +459,55 @@ function holo(hote, graine){
       if(g.deg % 90) continue;
       const a2 = ab(proj(g.q));
       ctx.fillText(String(g.deg).padStart(3,'0'), a2[0]+3, a2[1]-3);
+    }
+
+    // ---- Cercles d'instrument --------------------------------
+    for(const inst of instruments){
+      const n = inst.pts.length;
+      const i0 = inst.arc ? Math.floor(inst.arc[0]*n) : 0;
+      const i1 = inst.arc ? Math.floor(inst.arc[1]*n) : n;
+
+      ctx.globalAlpha = inst.al; ctx.lineWidth = .6;
+      if(inst.dash){ ctx.setLineDash(inst.dash); ctx.lineDashOffset = -temps*.018; }
+      else ctx.setLineDash([]);
+      ctx.beginPath();
+      for(let i = i0; i <= i1; i++){
+        const q = ab(proj(inst.pts[i % n]));
+        i === i0 ? ctx.moveTo(q[0],q[1]) : ctx.lineTo(q[0],q[1]);
+      }
+      if(!inst.arc) ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if(inst.ticks){
+        ctx.globalAlpha = inst.al * .8; ctx.lineWidth = .5;
+        ctx.beginPath();
+        const pas = Math.max(1, Math.floor(n / inst.ticks));
+        for(let i = i0; i < i1; i += pas){
+          const p = inst.pts[i % n];
+          const cx2 = 0, cy2 = SOL + .95, cz2 = 0;
+          const dx2 = p[0]-cx2, dy2 = p[1]-cy2, dz2 = p[2]-cz2;
+          const g = ((i/pas) % 5 === 0) ? 1.075 : 1.032;   // graduation renforcée
+          const a1 = ab(proj(p));
+          const a2 = ab(proj([cx2+dx2*g, cy2+dy2*g, cz2+dz2*g]));
+          ctx.moveTo(a1[0],a1[1]); ctx.lineTo(a2[0],a2[1]);
+        }
+        ctx.stroke();
+      }
+
+      // Crochets aux extrémités des secteurs partiels
+      if(inst.arc){
+        ctx.globalAlpha = inst.al * 1.5; ctx.lineWidth = .9;
+        ctx.beginPath();
+        for(const i of [i0, i1 - 1]){
+          const p = inst.pts[i % n];
+          const g = 1.11;
+          const a1 = ab(proj(p));
+          const a2 = ab(proj([p[0]*g, (p[1]-(SOL+.95))*g + SOL+.95, p[2]*g]));
+          ctx.moveTo(a1[0],a1[1]); ctx.lineTo(a2[0],a2[1]);
+        }
+        ctx.stroke();
+      }
     }
 
     // ---- Gnomon XYZ ------------------------------------------
