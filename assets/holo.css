@@ -65,15 +65,15 @@ body::before{
 /* Vignettage : les bords s'assombrissent, comme au bord du champ
    d'un objectif. C'est aussi ce qui fait ressortir l'aberration. */
 .vignettage{
-  position:fixed;inset:0;z-index:5;pointer-events:none;
+  position:fixed;inset:0;z-index:6;pointer-events:none;
   background:
-    radial-gradient(52% 42% at 50% 46%,
-      transparent 0%, rgba(3,8,15,.42) 56%,
-      rgba(3,8,15,.88) 82%, rgba(3,8,15,1) 100%),
-    radial-gradient(62% 58% at 0% 0%,    rgba(3,8,15,.96), transparent 60%),
-    radial-gradient(62% 58% at 100% 0%,  rgba(3,8,15,.96), transparent 60%),
-    radial-gradient(62% 58% at 0% 100%,  rgba(3,8,15,.96), transparent 60%),
-    radial-gradient(62% 58% at 100% 100%,rgba(3,8,15,.96), transparent 60%);
+    radial-gradient(62% 54% at 50% 47%,
+      transparent 0%, rgba(3,8,15,.16) 62%,
+      rgba(3,8,15,.52) 86%, rgba(3,8,15,.78) 100%),
+    radial-gradient(48% 44% at 0% 0%,     rgba(3,8,15,.62), transparent 62%),
+    radial-gradient(48% 44% at 100% 0%,   rgba(3,8,15,.62), transparent 62%),
+    radial-gradient(48% 44% at 0% 100%,   rgba(3,8,15,.62), transparent 62%),
+    radial-gradient(48% 44% at 100% 100%, rgba(3,8,15,.62), transparent 62%);
 }
 
 /* Instabilité de projecteur : un très léger flottement d'ensemble */
@@ -90,7 +90,7 @@ body::before{
 .lueur{
   position:fixed;inset:0;z-index:1;pointer-events:none;
   background:radial-gradient(46% 42% at 50% 47%,
-    rgba(30,95,168,.20) 0%, rgba(30,95,168,.09) 42%,
+    rgba(30,95,168,.14) 0%, rgba(30,95,168,.065) 42%,
     rgba(56,188,216,.035) 66%, transparent 82%);
 }
 
@@ -101,7 +101,7 @@ body::before{
    en dessous de l'interface, qui doit rester nette. */
 .grain{
   position:fixed;top:-80px;left:-80px;right:-80px;bottom:-80px;
-  z-index:6;pointer-events:none;opacity:.19;mix-blend-mode:screen;
+  z-index:5;pointer-events:none;opacity:.075;mix-blend-mode:screen;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.62' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='2.4' intercept='-.7'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
   animation:pellicule .8s steps(1) infinite;
   will-change:transform;

@@ -90,10 +90,55 @@ function holo(hote, graine){
          pt(coins[3][0] + (coins[2][0]-coins[3][0])*t, y+ep, coins[3][1] + (coins[2][1]-coins[3][1])*t));
     }
 
+    // Garde-corps périphérique, en retrait du nez de dalle
+    const gc = [];
+    for(const [x,z] of coins){
+      const rx = cx + (x-cx)*.90, rz = cz + (z-cz)*.90;
+      gc.push(pt(rx, y+ep+.075, rz));
+    }
+    quad(resille, ...gc);
+    for(let k = 0; k < 4; k++){
+      sg(resille, gc[k], pt(P[gc[k]][0], y+ep, P[gc[k]][2]));
+      // montants intermédiaires
+      const n = gc[(k+1)%4];
+      for(let m = 1; m < 4; m++){
+        const t = m/4;
+        const xx = P[gc[k]][0] + (P[n][0]-P[gc[k]][0])*t;
+        const zz2 = P[gc[k]][2] + (P[n][2]-P[gc[k]][2])*t;
+        sg(resille, pt(xx, y+ep, zz2), pt(xx, y+ep+.075, zz2));
+      }
+    }
+
+    // Poutre-caisson sous dalle, treillis en N
+    const nez = [ (coins[1][0]+coins[2][0])/2, (coins[1][1]+coins[2][1])/2 ];
+    const pied = [ (coins[0][0]+coins[3][0])/2, (coins[0][1]+coins[3][1])/2 ];
+    const prof = .13;
+    for(let m = 0; m <= 6; m++){
+      const t = m/6;
+      const xx = pied[0] + (nez[0]-pied[0])*t, zz2 = pied[1] + (nez[1]-pied[1])*t;
+      sg(resille, pt(xx, y, zz2), pt(xx, y-prof*(1-t*.55), zz2));
+      if(m < 6){
+        const t2 = (m+1)/6;
+        const x2 = pied[0] + (nez[0]-pied[0])*t2, z2 = pied[1] + (nez[1]-pied[1])*t2;
+        sg(resille, pt(xx, y-prof*(1-t*.55), zz2), pt(x2, y, z2));
+      }
+    }
+
+    // Nacelle technique suspendue sous une dalle sur deux
+    if(i % 2 === 0){
+      const nx = cx + (nez[0]-cx)*.62, nz = cz + (nez[1]-cz)*.62;
+      const ny = y - .30, np = [];
+      for(const [sx,sz] of [[-1,-1],[1,-1],[1,1],[-1,1]])
+        np.push(pt(nx + sx*.075, ny, nz + sz*.055));
+      quad(dalles, ...np);
+      for(const q of np) sg(cables, q, pt(P[q][0], y, P[q][2]));
+    }
+
     // Câbles de suspension depuis le sommet du mât, en pointillés
     const ancrage = pt(0, SOL + HAUT - .06, 0);
     sg(cables, ancrage, bas[1]);
     sg(cables, ancrage, bas[2]);
+    sg(cables, pt(0, SOL + HAUT - .34, 0), bas[0]);
 
     ancres.push({ idx: hau[1], phase: alea()*6.28, n: i+1, h: (y - SOL) * 12.4 });
   }
@@ -108,6 +153,19 @@ function holo(hote, graine){
     }
     for(let i = 0; i < 16; i++) sg(resille, prev[i], prev[(i+1)%16]);
     for(let i = 0; i < 16; i += 4) sg(cables, prev[i], matHaut[i % 4]);
+  }
+
+  /* --- Couronnement : treillis pyramidal au sommet du mât --- */
+  const cime = pt(0, SOL + HAUT + .30, 0);
+  const cour = [];
+  for(let i = 0; i < 8; i++){
+    const t = i/8 * Math.PI*2, r = .30;
+    cour.push(pt(Math.cos(t)*r, SOL + HAUT + .02, Math.sin(t)*r));
+  }
+  for(let i = 0; i < 8; i++){
+    sg(porteur, cour[i], cour[(i+1)%8]);
+    sg(resille, cour[i], cime);
+    sg(resille, cour[i], matHaut[i % 4]);
   }
 
   /* --- Pilotis : le bâtiment ne touche pas le sol --- */
@@ -263,19 +321,32 @@ function holo(hote, graine){
     const ab = q => [L/2 + (q[0]-L/2)*k, H/2 + (q[1]-H/2)*k, q[2]];
     const pts = P.map(p => ab(proj(p)));
 
-    // Trois bandes : net à la distance de mise au point, flou
-    // au-delà ET en deçà. Le flou étale l'énergie du trait, donc
-    // on compense l'épaisseur et l'opacité, sinon la ligne ne
-    // devient pas floue, elle disparaît.
-    const bandes = flouActif()
-      ? [{ min: .95,             blur:'blur(2.4px)', ep:2.6, op:2.1 },
-         { min:-99,   max:-.55,  blur:'blur(1.5px)', ep:2.0, op:1.8 },
-         { min:-.55,  max:.95,   blur:'none',        ep:1,   op:1   }]
-      : [{ min:-99, blur:'none', ep:1, op:1 }];
+    // Cinq tranches réparties sur l'étendue réelle de profondeur,
+    // recalculée à chaque image. Le plan de netteté est au centre du
+    // volume ; le flou croît de part et d'autre. L'épaisseur et
+    // l'opacité sont compensées, sinon le trait ne devient pas flou,
+    // il s'évapore.
+    let zMin = 1e9, zMax = -1e9;
+    for(const q of pts){ if(q[2] < zMin) zMin = q[2]; if(q[2] > zMax) zMax = q[2]; }
+    const zMid = (zMin + zMax) / 2, demi = Math.max(.001, (zMax - zMin) / 2);
+
+    const bandes = [];
+    if(flouActif()){
+      const NB = 5;
+      for(let i = 0; i < NB; i++){
+        const a = zMin + (zMax - zMin) * i / NB;
+        const b = zMin + (zMax - zMin) * (i+1) / NB;
+        const d = Math.abs(((a+b)/2 - zMid) / demi);   // 0 au net, 1 aux extrêmes
+        const r = 2.8 * d * d;                          // rayon de flou
+        bandes.push({ min:a, max:(i===NB-1 ? 1e9 : b),
+                      blur: r < .25 ? 'none' : `blur(${r.toFixed(2)}px)`,
+                      ep: 1 + r * .95, op: 1 + r * .75 });
+      }
+    } else bandes.push({ min:-1e9, max:1e9, blur:'none', ep:1, op:1 });
 
     const dansBande = (a,b,bd) => {
       const z = (pts[a][2] + pts[b][2]) / 2;
-      return z >= (bd.min ?? -99) && z < (bd.max ?? 99);
+      return z >= bd.min && z < bd.max;
     };
 
     const lot = (couche, alpha, lw, bd, dash) => {
@@ -295,7 +366,16 @@ function holo(hote, graine){
 
     for(const bd of bandes){
       ctx.filter = bd.blur;
-      lot(trame,   .09, .6, bd);
+      // La trame de sol s'efface avec l'éloignement du centre :
+      // quatre couronnes d'opacité décroissante.
+      for(let c = 0; c < 4; c++){
+        const sousLot = trame.filter(([a,b]) => {
+          const pa = P[a], pb = P[b];
+          const d = Math.max(Math.hypot(pa[0],pa[2]), Math.hypot(pb[0],pb[2]));
+          return d >= c*G/4 && d < (c+1)*G/4;
+        });
+        lot(sousLot, .13 * (1 - c*.28), .6, bd);
+      }
       lot(resille, .22, .5, bd);
       lot(cables,  .30, .5, bd, [3,4]);   // pointillés défilants
       lot(dalles,  .50, .8, bd);
