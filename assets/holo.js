@@ -97,13 +97,37 @@ function holo(hote, graine){
     lumieres.push([(a[0]+b[0])/2, (a[1]+b[1])/2, (a[2]+b[2])/2]);
   }
 
+  /* ---- Étiquettes flottantes : elles ne disparaissent jamais mais
+         subissent le flou de profondeur, comme le bâtiment. ---- */
+  const etiquettes = [
+    { p:[ 1.55,  2.30, -0.30], t:'ORBON INTELLIGENCE' },
+    { p:[-1.70,  1.95,  0.55], t:'43.6100°N  3.8767°E' },
+    { p:[ 1.35,  1.20,  0.90], t:'H 128.00 m' },
+    { p:[-1.55,  0.95, -0.75], t:'SHON 24 800 m²' },
+    { p:[ 1.60,  0.35, -0.85], t:'NIV 34 / 34' },
+    { p:[-1.40,  2.55,  0.10], t:'ÉTAT · NON BÂTI' },
+    { p:[ 1.20,  2.70,  0.60], t:'REL 4.62.11' },
+    { p:[-1.65,  0.30,  0.95], t:'ÉCH 1:500' },
+    { p:[ 0.30,  3.10, -0.55], t:'ALT +128.00' },
+    { p:[-0.60,  0.10, -1.15], t:'EMPRISE 2 356 m²' }
+  ];
+
   const feux = sommets.slice(0, 3).map(i => [P[i][0], P[i][1] + .05, P[i][2]]);
   const filsLumiere = neons;
 
   /* ---- Ancres accrochées à des points remarquables ---- */
+  // On choisit les ancres sur l'ENVELOPPE : des points éloignés de
+  // l'axe, donc réellement visibles de l'extérieur. Pris au cœur du
+  // modèle, ils seraient masqués en permanence.
   const cands = [];
-  for(let i = base; i < P.length; i += 137) cands.push(i);
-  const REMARQUABLES = cands.slice(0, 6);
+  for(let i = base; i < P.length; i++){
+    const r = Math.hypot(P[i][0], P[i][2]);
+    if(r > .78) cands.push({ i, r, y:P[i][1] });
+  }
+  cands.sort((a,b) => a.y - b.y);
+  const REMARQUABLES = [];
+  for(let k = 0; k < 6 && cands.length; k++)
+    REMARQUABLES.push(cands[Math.floor((k + .5) / 6 * cands.length)].i);
   for(let i = 0; i < REMARQUABLES.length; i++)
     ancres.push({ idx: REMARQUABLES[i], phase: alea()*6.28, n: i+1,
                   h: (P[REMARQUABLES[i]][1] - SOL) * 42 });
@@ -645,11 +669,126 @@ function holo(hote, graine){
   const BLANC = '210,216,224';   // Blanc cassé, la couleur de l'objet
 
   // Chaque ancre mémorise son accrochage : 0 relâchée, 1 verrouillée.
-  for(const an of ancres){ an.acq = 0; an.vis = false; }
+  // Chaque ancre porte une information différente. Le relevé n'est
+  // plus une simple coordonnée mais une fiche du bâtiment.
+  const FICHES = [
+    'ORBON INTELLIGENCE',
+    '43.6100°N  3.8767°E',
+    'H 128.00 m · NIV 32',
+    'EMPRISE 62 x 38 m',
+    'RELEVÉ 04.62.11',
+    'ÉTAT · NON BÂTI'
+  ];
+  for(let i = 0; i < ancres.length; i++){
+    ancres[i].acq = 0; ancres[i].vis = false;
+    ancres[i].fiche = FICHES[i % FICHES.length];
+  }
+
+  // Rayon de flou d'un point, calculé comme dans le shader : les
+  // relevés appartiennent à la scène, ils subissent donc la même
+  // profondeur de champ que la géométrie.
+  const flouDe = (zz) => {
+    const d = Math.min(2, Math.abs(zz - Math.sin(tilt)*(SOL + .95)) / 1.15);
+    return Math.min(14, Math.pow(d, 1.55) * 5.5);
+  };
+
+  // Texte flouté par passes décalées : ctx.filter n'est pas fiable
+  // partout, et six étiquettes ne coûtent rien à redessiner.
+  const texteFlou = (txt, x, y, alpha, r) => {
+    if(r < .4){ t2.globalAlpha = alpha; t2.fillText(txt, x, y); return; }
+    const N = Math.min(10, Math.max(5, Math.round(r * 1.6)));
+    t2.globalAlpha = alpha * .32;
+    t2.fillText(txt, x, y);
+    t2.globalAlpha = alpha * .68 / N;
+    for(let i = 0; i < N; i++){
+      const a = i/N * Math.PI*2;
+      t2.fillText(txt, x + Math.cos(a)*r, y + Math.sin(a)*r);
+    }
+  };
+  const traitFlou = (chemin, alpha, r) => {
+    if(r < .4){ t2.globalAlpha = alpha; chemin(0,0); return; }
+    const N = Math.min(10, Math.max(5, Math.round(r * 1.6)));
+    t2.globalAlpha = alpha * .32; chemin(0,0);
+    t2.globalAlpha = alpha * .68 / N;
+    for(let i = 0; i < N; i++){
+      const a = i/N * Math.PI*2;
+      chemin(Math.cos(a)*r, Math.sin(a)*r);
+    }
+  };
+
+  // Occlusion : une ancre est masquée si un point du bâtiment se
+  // projette au même endroit à l'écran, mais plus près de la caméra.
+  // On échantillonne un sommet sur quatre, ce qui suffit largement.
+  const ECHANT = [];
+  for(let i = 0; i < P.length; i += 4) ECHANT.push(P[i]);
+  // Valeurs réglées par balayage : elles laissent 2 à 5 ancres
+  // visibles selon l'angle, sur les 6. Trop strict, aucune ne
+  // disparaissait ; trop lâche, toutes restaient masquées.
+  const RAYON = 22;        // en pixels
+  const MARGE = .20;       // il faut être franchement devant
+  const MINI  = 3;         // et être plusieurs, pas un sommet isolé
+  const masquee = (q) => {
+    let n = 0;
+    for(let i = 0; i < ECHANT.length; i++){
+      const e = proj(ECHANT[i]);
+      if(e[2] >= q[2] - MARGE) continue;
+      const dx = e[0] - q[0], dy = e[1] - q[1];
+      if(dx*dx + dy*dy < RAYON*RAYON && ++n >= MINI) return true;
+    }
+    return false;
+  };
+
+  // ctx.filter est fiable ici : on n'est pas en composition additive.
+  let filtreOK = false;
+  try {
+    const c = document.createElement('canvas').getContext('2d');
+    c.filter = 'blur(2px)';
+    filtreOK = (c.filter === 'blur(2px)');
+  } catch(e){}
 
   const dessineTexte = (dt) => {
     t2.clearRect(0, 0, L, H);
     t2.lineWidth = 1;
+    t2.filter = 'none';
+
+    /* ---- Étiquettes : jamais masquées, mais floutées avec la
+           distance, selon la même loi que le shader du bâtiment. ---- */
+    t2.font = '10px ui-monospace, "SFMono-Regular", monospace';
+    for(const et of etiquettes){
+      const q = proj(et.p);
+      const d = Math.min(2, Math.abs((q[2] - Math.sin(tilt)*1.2) / 1.15));
+      const coc = Math.min(9, Math.pow(d, 1.55) * 5.5);
+      const al = .30 - .10 * d;
+      t2.fillStyle = `rgba(${BLANC},1)`;
+      if(coc <= .4){
+        t2.filter = 'none'; t2.globalAlpha = al;
+        t2.fillText(et.t, q[0], q[1]);
+      } else if(filtreOK){
+        t2.filter = `blur(${coc.toFixed(2)}px)`;
+        t2.globalAlpha = al;
+        t2.fillText(et.t, q[0], q[1]);
+      } else {
+        // Secours si le navigateur ignore ctx.filter : le texte est
+        // répété en couronne, l'énergie totale restant constante.
+        t2.filter = 'none';
+        const N = 8;
+        t2.globalAlpha = al * .30;
+        t2.fillText(et.t, q[0], q[1]);
+        t2.globalAlpha = al * .70 / N;
+        for(let k = 0; k < N; k++){
+          const th = k/N * Math.PI*2;
+          t2.fillText(et.t, q[0] + Math.cos(th)*coc, q[1] + Math.sin(th)*coc);
+        }
+      }
+      // petit trait de rappel, flouté lui aussi
+      t2.strokeStyle = `rgba(${BLANC},1)`;
+      t2.globalAlpha = .16 - .06 * d;
+      t2.beginPath();
+      t2.moveTo(q[0] - 4, q[1] + 4);
+      t2.lineTo(q[0] + t2.measureText(et.t).width + 4, q[1] + 4);
+      t2.stroke();
+    }
+    t2.filter = 'none';
 
     // Graduations chiffrées de la couronne, très en retrait
     t2.font = '9px ui-monospace, "SFMono-Regular", monospace';
@@ -674,62 +813,61 @@ function holo(hote, graine){
     for(const an of ancres){
       const q = proj(P[an.idx]);
       an.ecran = q;
-      const visible = q[2] <= .28;
+      const visible = !masquee(q);
       an.vis = visible;
 
-      // Accrochage progressif : la cible se verrouille en un tiers de
-      // seconde, et se relâche un peu plus vite qu'elle ne s'accroche.
-      const cible = visible ? 1 : 0;
-      an.acq += (cible - an.acq) * Math.min(1, dt * (visible ? .009 : .014));
-      if(an.acq < .012) continue;
+      // Le relevé ne disparaît jamais : quand son point passe derrière
+      // le volume, il faiblit sans s'éteindre.
+      const cible = visible ? 1 : .42;
+      an.acq += (cible - an.acq) * Math.min(1, dt * .009);
 
       const bat = .5 + .5*Math.sin(temps*.0035 + an.phase);
       const A0  = an.acq;
+      const r   = flouDe(q[2]);          // même flou que la géométrie
 
-      // Les crochets se resserrent en se verrouillant.
-      const s  = 11 * (1 + (1 - A0) * 1.9);
+      const s  = 11 * (1 + (1 - A0) * 1.2);
       const br = 4.5;
       const x = q[0], y = q[1];
 
       t2.strokeStyle = `rgba(${CYAN},1)`;
-      t2.globalAlpha = A0 * (.34 + .30*bat);
-      t2.beginPath();
-      for(const [sx, sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){
-        t2.moveTo(x + sx*s, y + sy*s - sy*br);
-        t2.lineTo(x + sx*s, y + sy*s);
-        t2.lineTo(x + sx*s - sx*br, y + sy*s);
-      }
-      t2.stroke();
+      traitFlou((ox, oy) => {
+        t2.beginPath();
+        for(const [sx, sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){
+          t2.moveTo(x + sx*s + ox, y + sy*s - sy*br + oy);
+          t2.lineTo(x + sx*s + ox, y + sy*s + oy);
+          t2.lineTo(x + sx*s - sx*br + ox, y + sy*s + oy);
+        }
+        t2.stroke();
+      }, A0 * (.34 + .30*bat), r);
 
-      // Point de visée, seulement une fois verrouillé
-      if(A0 > .55){
-        t2.fillStyle = `rgba(${CYAN},1)`;
-        t2.globalAlpha = (A0 - .55)/.45 * (.30 + .55*bat);
-        t2.fillRect(x - 1, y - 1, 2, 2);
-      }
+      // Point de visée
+      t2.fillStyle = `rgba(${CYAN},1)`;
+      t2.globalAlpha = A0 * (.28 + .50*bat);
+      t2.fillRect(x - 1, y - 1, 2, 2);
 
-      // Trait de rappel puis relevé, tracés de gauche à droite au
-      // rythme de l'accrochage.
+      // Trait de rappel
       const cote = (x > L*.66) ? -1 : 1;
-      const lg = 26 * A0;
+      const lg = 26;
       t2.strokeStyle = `rgba(${CYAN},1)`;
-      t2.globalAlpha = A0 * .28;
-      t2.beginPath();
-      t2.moveTo(x + cote*s, y - s);
-      t2.lineTo(x + cote*(s + lg*.4), y - s - lg*.34);
-      t2.lineTo(x + cote*(s + lg),    y - s - lg*.34);
-      t2.stroke();
+      traitFlou((ox, oy) => {
+        t2.beginPath();
+        t2.moveTo(x + cote*s + ox, y - s + oy);
+        t2.lineTo(x + cote*(s + lg*.4) + ox, y - s - lg*.34 + oy);
+        t2.lineTo(x + cote*(s + lg) + ox,    y - s - lg*.34 + oy);
+        t2.stroke();
+      }, A0 * .26, r);
 
-      if(A0 > .7){
-        const X = (q[0]/L).toFixed(2), Y = (q[1]/H).toFixed(2);
-        const Z = (1 - (q[2]+2.6)/5.2).toFixed(2);
-        const etat = bat > .80 ? 'VERROU' : 'SUIVI';
-        const lib = `P${String(an.n).padStart(2,'0')} · X${X} Y${Y} Z${Z} · ${etat}`;
-        t2.fillStyle = `rgba(${CYAN},1)`;
-        t2.globalAlpha = (A0 - .7)/.3 * (.42 + .28*bat);
-        const lx = cote > 0 ? x + s + 30 : x - s - 30 - t2.measureText(lib).width;
-        t2.fillText(lib, lx, y - s - 12);
-      }
+      // Deux lignes : la fiche du bâtiment, puis le relevé en direct
+      const X = (q[0]/L).toFixed(2), Y = (q[1]/H).toFixed(2);
+      const Z = (1 - (q[2]+2.6)/5.2).toFixed(2);
+      const etat = visible ? (bat > .80 ? 'VERROU' : 'SUIVI') : 'MASQUÉ';
+      const l1 = an.fiche;
+      const l2 = `P${String(an.n).padStart(2,'0')} · X${X} Y${Y} Z${Z} · ${etat}`;
+      t2.fillStyle = `rgba(${CYAN},1)`;
+      const w = Math.max(t2.measureText(l1).width, t2.measureText(l2).width);
+      const lx = cote > 0 ? x + s + 30 : x - s - 30 - w;
+      texteFlou(l1, lx, y - s - 22, A0 * (.46 + .22*bat), r);
+      texteFlou(l2, lx, y - s - 11, A0 * (.34 + .22*bat), r);
     }
     t2.globalAlpha = 1;
   };
