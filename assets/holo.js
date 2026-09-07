@@ -715,19 +715,44 @@ function holo(hote, graine){
     filtreOK = (c.filter === 'blur(2px)');
   } catch(e){}
 
+  // Profondeur moyenne du modèle, recalculée à chaque image : c'est
+  // elle qui sépare l'avant de l'arrière. Un seuil fixe ne vaut que
+  // pour une géométrie donnée, et sautait dès qu'on changeait de
+  // bâtiment.
+  const SONDES = [];
+  for(let i = 0; i < P.length; i += 29) SONDES.push(P[i]);
+  const profondeurMediane = () => {
+    let som = 0;
+    for(const p of SONDES) som += proj(p)[2];
+    return som / SONDES.length;
+  };
+
+  // Cartouche sombre derrière le texte : sans lui, rien ne se lit
+  // par-dessus un filaire dense.
+  const cartouche = (x, y, txt, al) => {
+    const w = t2.measureText(txt).width;
+    t2.globalAlpha = al * .72;
+    t2.fillStyle = 'rgba(3,8,15,1)';
+    t2.fillRect(x - 3, y - 9, w + 6, 12);
+  };
+
   const dessineTexte = (dt) => {
     t2.clearRect(0, 0, L, H);
     t2.lineWidth = 1;
     t2.filter = 'none';
+    const zMed = profondeurMediane();
 
     /* ---- Étiquettes : jamais masquées, mais floutées avec la
            distance, selon la même loi que le shader du bâtiment. ---- */
+    // Les étiquettes sont en Blanc cassé, les ancres en Cyan léger :
+    // deux familles, deux couleurs, deux rôles.
     t2.font = '10px ui-monospace, "SFMono-Regular", monospace';
     for(const et of etiquettes){
       const q = proj(et.p);
-      const d = Math.min(2, Math.abs((q[2] - Math.sin(tilt)*1.2) / 1.15));
-      const coc = Math.min(9, Math.pow(d, 1.55) * 5.5);
-      const al = .30 - .10 * d;
+      const d = Math.min(2, Math.abs((q[2] - zMed) / 1.15));
+      const coc = Math.min(7, Math.pow(d, 1.55) * 4.4);
+      const al = .78 - .26 * d;
+      cartouche(q[0], q[1], et.t, al);
       t2.fillStyle = `rgba(${BLANC},1)`;
       if(coc <= .4){
         t2.filter = 'none'; t2.globalAlpha = al;
@@ -750,11 +775,14 @@ function holo(hote, graine){
         }
       }
       // petit trait de rappel, flouté lui aussi
+      // Repère en tête, propre aux étiquettes : il les distingue au
+      // premier coup d'œil des réticules d'ancre.
+      t2.filter = 'none';
       t2.strokeStyle = `rgba(${BLANC},1)`;
-      t2.globalAlpha = .16 - .06 * d;
+      t2.globalAlpha = al * .55;
       t2.beginPath();
-      t2.moveTo(q[0] - 4, q[1] + 4);
-      t2.lineTo(q[0] + t2.measureText(et.t).width + 4, q[1] + 4);
+      t2.moveTo(q[0] - 12, q[1] - 3);
+      t2.lineTo(q[0] - 5,  q[1] - 3);
       t2.stroke();
     }
     t2.filter = 'none';
@@ -765,13 +793,13 @@ function holo(hote, graine){
     for(const g of couronne){
       if(g.deg % 90) continue;
       const q = proj(g.q);
-      t2.globalAlpha = .26;
+      t2.globalAlpha = .40;
       t2.fillText(String(g.deg).padStart(3,'0'), q[0]+3, q[1]-3);
     }
 
     // Lettres des axes
     t2.font = '11px ui-monospace, monospace';
-    t2.globalAlpha = .48;
+    t2.globalAlpha = .62;
     for(const ax of axes){
       const q = proj(P[ax.b]);
       t2.fillText(ax.lab, q[0]+6, q[1]-5);
@@ -782,7 +810,7 @@ function holo(hote, graine){
     for(const an of ancres){
       const q = proj(P[an.idx]);
       an.ecran = q;
-      const visible = q[2] <= .28;
+      const visible = q[2] <= zMed + .06;   // dans la moitié avant
       an.vis = visible;
 
       // Le relevé ne disparaît jamais : quand son point passe derrière
