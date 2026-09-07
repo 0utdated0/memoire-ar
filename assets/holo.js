@@ -52,17 +52,20 @@ function holo(hote, graine){
   const SOL = -1.15;
   const lumieres = [];
 
-  const NP = 58, NIV = 74, HT = 2.95;
+  const NP = 44, NIV = 54, HT = 2.70;
   const VRILLE = .62;                 // le fût pivote doucement
   const COUTURE0 = 1.15, COUTURE = 4.2;   // la couture fait ~2/3 de tour
 
-  // Profil : jupe très ouverte en bas, fût élancé ensuite.
-  const profil = (t) => (1 + 3.30 * Math.exp(-t * 13.5)) * (1 - .16*t);
+  // Profil : le fût est presque droit. L'évasement décroît en
+  // exp(-24t), il n'agit donc plus du tout au-delà du dixième
+  // inférieur. Avec exp(-13t) il agissait encore à mi-hauteur et
+  // fabriquait une trompette.
+  const profil = (t) => (1 + 1.05 * Math.exp(-t * 24)) * (1 - .28*t + .07*t*t*t);
 
   // Sommet tranché en biais : la hauteur maximale dépend de l'azimut.
   const coupe = (th) => 1 - .30 * (1 + Math.cos(th - .55)) * .5;
 
-  const RX = .195, RZ = .150;
+  const RX = .295, RZ = .225;
   const pointFut = (t, th) => {
     const k = profil(t), rot = t*VRILLE;
     const x = Math.cos(th)*RX*k, z = Math.sin(th)*RZ*k;
@@ -95,7 +98,7 @@ function holo(hote, graine){
     for(let j2 = 0; j2 < NP; j2++){
       const a = n.ligne[j2], b = n.ligne[(j2+1)%NP];
       if(a < 0 || b < 0) continue;
-      const jupe = n.t < .17;                 // la jupe est striée partout
+      const jupe = n.t < .12;                 // la jupe est striée partout
       if(jupe || cotéAilettes(n.t, j2))
         sg(dalles, a, b);
     }
@@ -108,7 +111,7 @@ function holo(hote, graine){
     for(let j2 = 0; j2 < NP; j2++){
       const a = n.ligne[j2], b = h.ligne[j2];
       if(a < 0 || b < 0) continue;
-      if(n.t >= .17 && !cotéAilettes(n.t, j2)) sg(resille, a, b);
+      if(n.t >= .12 && !cotéAilettes(n.t, j2) && j2 % 2 === 0) sg(resille, a, b);
     }
     if(i % 9 === 0){
       for(let j2 = 0; j2 < NP; j2++){
@@ -151,15 +154,20 @@ function holo(hote, graine){
   }
 
   /* ---- Jupe : plateaux cascadants qui débordent au sol ---- */
+  // Six plateaux seulement, débordant au plus de 85 %. La version
+  // précédente montait à 285 % avec une ondulation en plus : elle
+  // écrasait la tour au lieu de l'asseoir.
   const jupe = [];
-  for(let k = 0; k < 7; k++){
-    const y = SOL - .02 - k*.055;
-    const g = 1.05 + k*.30;
+  for(let k = 0; k < 6; k++){
+    const y = SOL - .015 - k*.048;
+    const g = 1.06 + k*.135;
     const p = [];
     for(let j2 = 0; j2 < NP; j2++){
       const th = j2/NP*Math.PI*2;
-      const et = 1 + .30*Math.cos(th*2 + .7) + .16*Math.cos(th*3 - 1.2);
-      p.push(pt(Math.cos(th)*RX*profil(0)*g*et, y, Math.sin(th)*RZ*profil(0)*g*et*1.25));
+      const et = 1 + .10*Math.cos(th*2 + .7);      // à peine ovalisé
+      p.push(pt(Math.cos(th)*RX*profil(0)*g*et,
+                y,
+                Math.sin(th)*RZ*profil(0)*g*et*1.18));
     }
     for(let j2 = 0; j2 < NP; j2++) sg(dalles, p[j2], p[(j2+1)%NP]);
     if(k) for(let j2 = 0; j2 < NP; j2 += 3) sg(resille, jupe[k-1][j2], p[j2]);
@@ -167,18 +175,18 @@ function holo(hote, graine){
   }
 
   /* ---- Entrée : évidement éclairé sous la jupe ---- */
-  for(let j2 = 26; j2 <= 34; j2++){
-    const a = P[jupe[6][j2]];
-    sg(porteur, jupe[6][j2], pt(a[0], SOL - .46, a[2]));
-    if(j2 % 2 === 0) lumieres.push([a[0]*.96, SOL - .30, a[2]*.96]);
+  for(let j2 = 19; j2 <= 26; j2++){
+    const a = P[jupe[5][j2]];
+    sg(porteur, jupe[5][j2], pt(a[0], SOL - .34, a[2]));
+    if(j2 % 2 === 0) lumieres.push([a[0]*.96, SOL - .22, a[2]*.96]);
   }
-  for(let j2 = 26; j2 < 34; j2++)
-    sg(resille, pt(P[jupe[6][j2]][0], SOL - .46, P[jupe[6][j2]][2]),
-                pt(P[jupe[6][j2+1]][0], SOL - .46, P[jupe[6][j2+1]][2]));
+  for(let j2 = 19; j2 < 26; j2++)
+    sg(resille, pt(P[jupe[5][j2]][0], SOL - .34, P[jupe[5][j2]][2]),
+                pt(P[jupe[5][j2+1]][0], SOL - .34, P[jupe[5][j2+1]][2]));
 
   /* ---- Baies éclairées, semées sur la peau à ailettes ---- */
-  for(let i = 6; i < NIV; i += 5)
-    for(let j2 = 0; j2 < NP; j2 += 7){
+  for(let i = 5; i < NIV; i += 4)
+    for(let j2 = 0; j2 < NP; j2 += 5){
       if(!cotéAilettes(i/NIV, j2)) continue;
       const a = niveaux[i].ligne[j2];
       if(a >= 0) lumieres.push([P[a][0]*1.005, P[a][1], P[a][2]*1.005]);
@@ -191,9 +199,9 @@ function holo(hote, graine){
                  .map(p => [p[0], p[1], p[2]]);
 
   /* ---- Ancres ---- */
-  const REMARQUABLES = [ niveaux[3].ligne[10], niveaux[16].ligne[30],
-                         niveaux[34].ligne[48], niveaux[52].ligne[16],
-                         couture[Math.floor(couture.length*.55)], levre[8] ];
+  const REMARQUABLES = [ niveaux[3].ligne[8], niveaux[13].ligne[22],
+                         niveaux[26].ligne[36], niveaux[40].ligne[12],
+                         couture[Math.floor(couture.length*.55)], levre[6] ];
   for(let i = 0; i < REMARQUABLES.length; i++)
     ancres.push({ idx: REMARQUABLES[i], phase: alea()*6.28, n: i+1,
                   h: (P[REMARQUABLES[i]][1] - SOL) * 96 });
@@ -631,7 +639,7 @@ function holo(hote, graine){
 
     // Champ de courbes de niveau
     for(let c = 0; c < 6; c++){
-      const r0 = .58 + c*.17;
+      const r0 = 1.28 + c*.15;
       let prec = null;
       for(let i = 0; i <= 96; i++){
         const a2 = i/96 * Math.PI*2;
@@ -640,7 +648,7 @@ function holo(hote, graine){
           + .055*Math.sin(5*a2 - temps*.0005 + c*1.7)
           + .032*Math.sin(8*a2 + temps*.0009);
         const p = [Math.cos(a2)*r, SOL-.28, Math.sin(a2)*r];
-        if(prec) S.push({ a:prec, b:p, w:.8, al:.34, fam:1 });
+        if(prec) S.push({ a:prec, b:p, w:.7, al:.16, fam:1 });
         prec = p;
       }
     }
