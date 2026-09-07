@@ -302,10 +302,10 @@ function holo(hote, graine){
      PROJECTION
      ========================================================= */
   /* Deux calques hors écran en définition réduite. Redessiné à
-     l'échelle 1, un calque à 24 % est nettement flou, un calque à
-     4,5 % l'est énormément : c'est le rééchantillonnage qui fait le
+     l'échelle 1, un calque à 42 % est légèrement flou, un calque à
+     15 % l'est nettement : c'est le rééchantillonnage qui fait le
      flou, sans aucun coût de tracé supplémentaire. */
-  const ECH = [.24, .045];
+  const ECH = [.42, .15];
   const bufs = ECH.map(() => {
     const c = document.createElement('canvas');
     return { c, x: c.getContext('2d') };
@@ -432,7 +432,7 @@ function holo(hote, graine){
       if(pts[i][2] > bMax) bMax = pts[i][2];
     }
     const zMid = (bMin + bMax) / 2;
-    const demi = Math.max(.22, (bMax - bMin) / 3.2);
+    const demi = Math.max(.30, (bMax - bMin) / 2.0);
 
     let zMin = 1e9, zMax = -1e9;
     for(const q of pts){ if(q[2] < zMin) zMin = q[2]; if(q[2] > zMax) zMax = q[2]; }
@@ -477,7 +477,7 @@ function holo(hote, graine){
     // ensuite par valeur voisine, en huit crans, uniquement pour
     // pouvoir tracer par lots. Aucun palier visible, et le nombre de
     // tracés reste borné.
-    const Q = 4;
+    const Q = 6;
     for(const co of couches){
       const casiers = new Map();
       for(const sgt of co.seg){
@@ -485,13 +485,15 @@ function holo(hote, graine){
         if(flou){
           const z = (pts[sgt[0]][2] + pts[sgt[1]][2]) / 2;
           const d = Math.min(2, Math.abs((z - zMid) / demi));
-          n = Math.min(1, d * d * 1.45);
+          // Courbe adoucie : progression régulière plutôt que
+          // brutale, et jamais tout à fait au maximum.
+          n = Math.min(.92, Math.pow(d, 1.5) * .52);
         }
         // deux cibles voisines au plus : net, doux, très flou
         const paires = n < .5 ? [[0, 1 - n*2], [1, n*2]]
                               : [[1, 2 - n*2], [2, n*2 - 1]];
         for(const [cible, p] of paires){
-          if(p < .14) continue;
+          if(p < .07) continue;
           const cran = Math.min(Q, Math.max(1, Math.round(p * Q)));
           const cle = cible * 16 + cran;
           let liste = casiers.get(cle);
@@ -614,8 +616,8 @@ function holo(hote, graine){
       if(!flou) return 0;
       const z = proj(p3)[2];
       const d = Math.min(2, Math.abs((z - zMid) / demi));
-      const n = Math.min(1, d * d * 1.45);
-      return n < .34 ? 0 : (n < .72 ? 1 : 2);
+      const n = Math.min(.92, Math.pow(d, 1.5) * .52);
+      return n < .30 ? 0 : (n < .66 ? 1 : 2);
     };
 
     ctx.lineCap = 'round';
