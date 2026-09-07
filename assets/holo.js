@@ -1323,9 +1323,9 @@ function holo(hote, graine){
     gl.uniform1f(UE.uDecalY, H*.03);
     gl.uniform1f(UE.uFocus, Math.sin(tilt) * (SOL + .95));
     const EF2 = Math.min(L, H) / 820;
-    gl.uniform1f(UE.uDemi,   1.15);
-    gl.uniform1f(UE.uForce,  5.5 * EF2);
-    gl.uniform1f(UE.uMaxCoC, 14.0 * EF2);
+    gl.uniform1f(UE.uDemi,   2.10);
+    gl.uniform1f(UE.uForce,  3.2 * EF2);
+    gl.uniform1f(UE.uMaxCoC, 8.0 * EF2);
     gl.uniform2f(UE.uPix, 1/atl.width, 1/atl.height);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texAtlas);
@@ -1356,9 +1356,9 @@ function holo(hote, graine){
     // écran de bureau mais 3,6 % d'un téléphone. Il paraissait donc
     // quatre fois plus fort sur mobile. On le met à l'échelle du cadre.
     const ECH_FLOU = Math.min(L, H) / 820;
-    gl.uniform1f(U.uDemi,   1.15);
-    gl.uniform1f(U.uForce,  5.5 * ECH_FLOU);
-    gl.uniform1f(U.uMaxCoC, 14.0 * ECH_FLOU);
+    gl.uniform1f(U.uDemi,   2.10);              // zone nette élargie
+    gl.uniform1f(U.uForce,  3.2 * ECH_FLOU);
+    gl.uniform1f(U.uMaxCoC, 8.0 * ECH_FLOU);
 
     const tracer = (buf, n) => {
       if(!n) return;
