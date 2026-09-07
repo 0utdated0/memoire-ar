@@ -376,6 +376,57 @@ function holo(hote, graine){
     }
   }
 
+  /* ---------------------------------------------------------
+     Une route qui vient de l'horizon jusqu'au pied de la tour. Son
+     tracé n'est pas droit : un terme sinusoïdal la fait serpenter,
+     et son rayon décroît, de sorte qu'elle s'enroule légèrement en
+     approchant. Comme le sol, elle s'efface avec la distance.
+     --------------------------------------------------------- */
+  const LARG_R = .17;
+  const surRoute = (t) => {
+    const r = 13.2 - 11.4 * t;
+    const a = .95 + 1.25 * Math.sin(t * 2.15) + t * .55;
+    return [Math.cos(a) * r, YSOL + .006, Math.sin(a) * r];
+  };
+  const bordRoute = (t, cote) => {
+    const p = surRoute(t), q = surRoute(Math.min(1, t + .004));
+    const dx = q[0]-p[0], dz = q[2]-p[2];
+    const n = Math.hypot(dx, dz) || 1;
+    return [p[0] - dz/n * LARG_R * cote, p[1], p[2] + dx/n * LARG_R * cote];
+  };
+  const NR = 150;
+  for(let i = 0; i < NR; i++){
+    const t0 = i/NR, t1 = (i+1)/NR;
+    const p = surRoute((t0+t1)/2);
+    const al = opaciteSol(Math.hypot(p[0], p[2])) * 2.1;
+    if(al < .006) continue;
+    for(const c of [-1, 1])
+      statiques.push({ a: bordRoute(t0, c), b: bordRoute(t1, c), w:.9, al, fam:1 });
+    // traverses tous les six pas
+    if(i % 6 === 0)
+      statiques.push({ a: bordRoute(t0,-1), b: bordRoute(t0,1), w:.9, al: al*.45, fam:1 });
+  }
+
+  /* Des points au sol : chacun un très court trait vertical. Ils se
+     massent près de l'entrée et se raréfient le long de la route. */
+  for(let n = 0; n < 130; n++){
+    const t = Math.pow(aleaA(), .6);           // resserrés près du bâtiment
+    const p = surRoute(t);
+    const c = (aleaA() - .5) * LARG_R * 3.4;
+    const q = surRoute(Math.min(1, t + .004));
+    const dx = q[0]-p[0], dz = q[2]-p[2], m = Math.hypot(dx, dz) || 1;
+    const x = p[0] - dz/m * c, z = p[2] + dx/m * c;
+    const al = opaciteSol(Math.hypot(x, z)) * 2.6;
+    if(al < .01) continue;
+    statiques.push({ a:[x, YSOL, z], b:[x, YSOL + .020, z], w:.9, al, fam:1 });
+  }
+  // et un attroupement au pied de la tour
+  for(let n = 0; n < 70; n++){
+    const a2 = aleaA() * Math.PI * 2, r = .9 + aleaA() * 1.5;
+    const x = Math.cos(a2)*r, z = Math.sin(a2)*r;
+    statiques.push({ a:[x, YSOL, z], b:[x, YSOL + .020, z], w:.9, al:.16, fam:1 });
+  }
+
   // Gnomon
   for(const ax of axes) statiques.push({ a:P[ax.a], b:P[ax.b], w: .9, al:.70, fam:1 });
   for(const [a, b] of gradAxes) statiques.push({ a:P[a], b:P[b], w:.9, al:.66, fam:1 });
@@ -793,6 +844,53 @@ function holo(hote, graine){
       }
     }
 
+    /* Véhicules volants. Chacun suit sa propre orbite, à son altitude
+       et à sa vitesse, et s'incline dans le sens de sa marche. La
+       carène est un chevron allongé ; un feu bat à l'avant. */
+    for(let v = 0; v < 7; v++){
+      const R  = 2.2 + v * .85;
+      const YY = SOL + .55 + v * .34;
+      const vt = (v % 2 ? 1 : -1) * (.00016 + v * .00005);
+      const a2 = temps * vt + v * 1.31;
+      const c = Math.cos(a2), s2 = Math.sin(a2);
+      const cx = c * R, cz = s2 * R;
+      const tx = -s2, tz = c;                    // tangente : sens de marche
+      const nx = -tz, nz = tx;                   // normale horizontale
+      const LG = .13, LA = .05;
+      const nez = [cx + tx*LG, YY, cz + tz*LG];
+      const aG  = [cx - tx*LG*.6 + nx*LA, YY - .012, cz - tz*LG*.6 + nz*LA];
+      const aD  = [cx - tx*LG*.6 - nx*LA, YY - .012, cz - tz*LG*.6 - nz*LA];
+      const cul = [cx - tx*LG*.95, YY, cz - tz*LG*.95];
+      const al = .34;
+      for(const [p1,p2] of [[nez,aG],[nez,aD],[aG,cul],[aD,cul],[aG,aD]])
+        S.push({ a:p1, b:p2, w:.9, al, fam:1 });
+      // feu de nez, battant
+      const b = Math.pow(Math.max(0, Math.sin(temps*.004 + v*2.1)), 5);
+      if(b > .03)
+        S.push({ a:[nez[0], nez[1]-.008, nez[2]], b:[nez[0], nez[1]+.008, nez[2]],
+                 w:.9, al:.20 + .70*b, fam:0 });
+      // sillage en pointillés derrière l'appareil
+      for(let k = 1; k <= 5; k++){
+        const a3 = a2 - vt * k * 900;
+        S.push({ a:[Math.cos(a3)*R, YY, Math.sin(a3)*R],
+                 b:[Math.cos(a3 - .012)*R, YY, Math.sin(a3 - .012)*R],
+                 w:.9, al:.16 - k*.026, fam:1 });
+      }
+    }
+
+    /* Quelques points qui remontent la route : des passants. */
+    for(let n = 0; n < 22; n++){
+      const t = ((temps * .0000075 * (1 + (n % 5) * .35) + n * .045) % 1);
+      const p = surRoute(t);
+      const q = surRoute(Math.min(1, t + .004));
+      const dx = q[0]-p[0], dz = q[2]-p[2], m = Math.hypot(dx, dz) || 1;
+      const c = ((n % 7) - 3) * LARG_R * .42;
+      const x = p[0] - dz/m * c, z = p[2] + dx/m * c;
+      const al = opaciteSol(Math.hypot(x, z)) * 3.0;
+      if(al < .012) continue;
+      S.push({ a:[x, YSOL, z], b:[x, YSOL + .022, z], w:.9, al, fam:1 });
+    }
+
     /* Pointillés animés. Chaque tiret est un court segment dont la
        position avance le long du tracé au fil du temps : ils défilent
        réellement, ils ne clignotent pas sur place. */
@@ -822,6 +920,17 @@ function holo(hote, graine){
              [Math.cos(a2)*11,  SOL - .015, Math.sin(a2)*11],
              34, .00013 * (k % 2 ? 1 : -1) * (1 + k * .3), .20, k * .25);
     }
+    // Axe de la route, qui défile vers le bâtiment
+    for(let i = 0; i < 40; i++){
+      const t0 = ((temps * .000024 + i / 40) % 1);
+      const t1 = t0 + .009;
+      if(t1 > 1) continue;
+      const A = surRoute(t0), B = surRoute(t1);
+      const al = opaciteSol(Math.hypot(A[0], A[2])) * 2.4;
+      if(al < .008) continue;
+      S.push({ a:A, b:B, w:.9, al, fam:1 });
+    }
+
     // Deux montants le long de la tour
     for(let k = 0; k < 2; k++){
       const a2 = k * Math.PI + .9;
