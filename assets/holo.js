@@ -740,7 +740,32 @@ function holo(hote, graine){
     t2.fillRect(x - 3, y - 9, w + 6, 12);
   };
 
+  /* Carte de profondeur : le modèle est projeté une fois par image
+     dans une grille grossière, en retenant la profondeur la plus
+     proche par case. Une étiquette est masquée si le bâtiment occupe
+     sa case en étant devant elle. Un seul balayage pour toutes. */
+  const CASE = 22;
+  let grille = null, gW = 0, gH = 0;
+  const construireGrille = () => {
+    gW = Math.ceil(L / CASE) + 1; gH = Math.ceil(H / CASE) + 1;
+    if(!grille || grille.length !== gW * gH) grille = new Float32Array(gW * gH);
+    grille.fill(1e9);
+    for(let i = 0; i < P.length; i += 3){
+      const e = proj(P[i]);
+      const cx = (e[0] / CASE) | 0, cy = (e[1] / CASE) | 0;
+      if(cx < 0 || cy < 0 || cx >= gW || cy >= gH) continue;
+      const k = cy * gW + cx;
+      if(e[2] < grille[k]) grille[k] = e[2];
+    }
+  };
+  const occulte = (q) => {
+    const cx = (q[0] / CASE) | 0, cy = (q[1] / CASE) | 0;
+    if(cx < 0 || cy < 0 || cx >= gW || cy >= gH) return false;
+    return grille[cy * gW + cx] < q[2] - .12;
+  };
+
   const dessineTexte = (dt) => {
+    construireGrille();
     t2.clearRect(0, 0, L, H);
     t2.lineWidth = 1;
     t2.filter = 'none';
@@ -757,28 +782,20 @@ function holo(hote, graine){
     for(const et of etiquettes){
       const a = proj(P[et.idx]);              // le point visé
       const qx = a[0] + et.dx, qy = a[1] + et.dy;
+      // L'étiquette est un objet du monde : intensité constante, elle
+      // n'est jamais atténuée par la distance. Elle disparaît pour une
+      // seule raison, le bâtiment la cache.
+      if(occulte(a)) continue;
       const d = Math.min(2, Math.abs((a[2] - zMed) / 1.15));
-      // Derrière le volume, l'étiquette recule au lieu de le traverser :
-      // elle ne s'éteint pas mais tombe à 12 % et se floute davantage.
-      // C'est le cartouche opaque qui la faisait auparavant ressortir
-      // par-dessus le bâtiment.
-      const devant = a[2] <= zMed;
-      et.f = (et.f === undefined) ? (devant ? 1 : 0)
-                                  : et.f + ((devant ? 1 : 0) - et.f) * Math.min(1, dt*.007);
-      const fond = .12 + .88 * et.f;
-      const coc = Math.min(9, Math.pow(d, 1.55) * 4.4 + (1 - et.f) * 3.2);
-      const al = (.80 - .28 * d) * fond;
+      const coc = Math.min(7, Math.pow(d, 1.55) * 4.4);
+      const al = .82;
       const w = t2.measureText(et.t).width;
 
-      // Cartouche : seulement quand l'étiquette est devant. Derrière,
-      // elle doit se fondre dans la profondeur, pas percer le volume.
       t2.globalCompositeOperation = 'source-over';
       t2.filter = 'none';
-      if(et.f > .05){
-        t2.globalAlpha = al * .70 * et.f;
-        t2.fillStyle = 'rgba(3,8,15,1)';
-        t2.fillRect(qx - 4, qy - 9, w + 8, 13);
-      }
+      t2.globalAlpha = al * .62;
+      t2.fillStyle = 'rgba(3,8,15,1)';
+      t2.fillRect(qx - 4, qy - 9, w + 8, 13);
 
       // les trois canaux, en additif
       t2.globalCompositeOperation = 'lighter';
@@ -844,22 +861,23 @@ function holo(hote, graine){
 
       const bat = .5 + .5*Math.sin(temps*.0035 + an.phase);
       const A0  = an.acq;
-      const r   = flouDe(q[2]);          // même flou que la géométrie
+      // Les ancres relèvent de l'interface, pas de la scène : elles
+      // restent NETTES, sans flou de profondeur ni aberration.
 
       const s  = 11 * (1 + (1 - A0) * 1.2);
       const br = 4.5;
       const x = q[0], y = q[1];
 
+      t2.filter = 'none';
       t2.strokeStyle = `rgba(${CYAN},1)`;
-      traitFlou((ox, oy) => {
-        t2.beginPath();
-        for(const [sx, sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){
-          t2.moveTo(x + sx*s + ox, y + sy*s - sy*br + oy);
-          t2.lineTo(x + sx*s + ox, y + sy*s + oy);
-          t2.lineTo(x + sx*s - sx*br + ox, y + sy*s + oy);
-        }
-        t2.stroke();
-      }, A0 * (.34 + .30*bat), r);
+      t2.globalAlpha = A0 * (.52 + .38*bat);
+      t2.beginPath();
+      for(const [sx, sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){
+        t2.moveTo(x + sx*s, y + sy*s - sy*br);
+        t2.lineTo(x + sx*s, y + sy*s);
+        t2.lineTo(x + sx*s - sx*br, y + sy*s);
+      }
+      t2.stroke();
 
       // Point de visée
       t2.fillStyle = `rgba(${CYAN},1)`;
@@ -870,13 +888,12 @@ function holo(hote, graine){
       const cote = (x > L*.66) ? -1 : 1;
       const lg = 26;
       t2.strokeStyle = `rgba(${CYAN},1)`;
-      traitFlou((ox, oy) => {
-        t2.beginPath();
-        t2.moveTo(x + cote*s + ox, y - s + oy);
-        t2.lineTo(x + cote*(s + lg*.4) + ox, y - s - lg*.34 + oy);
-        t2.lineTo(x + cote*(s + lg) + ox,    y - s - lg*.34 + oy);
-        t2.stroke();
-      }, A0 * .26, r);
+      t2.globalAlpha = A0 * .42;
+      t2.beginPath();
+      t2.moveTo(x + cote*s, y - s);
+      t2.lineTo(x + cote*(s + lg*.4), y - s - lg*.34);
+      t2.lineTo(x + cote*(s + lg),    y - s - lg*.34);
+      t2.stroke();
 
       // Deux lignes : la fiche du bâtiment, puis le relevé en direct
       const X = (q[0]/L).toFixed(2), Y = (q[1]/H).toFixed(2);
@@ -887,8 +904,15 @@ function holo(hote, graine){
       t2.fillStyle = `rgba(${CYAN},1)`;
       const w = Math.max(t2.measureText(l1).width, t2.measureText(l2).width);
       const lx = cote > 0 ? x + s + 30 : x - s - 30 - w;
-      texteFlou(l1, lx, y - s - 22, A0 * (.46 + .22*bat), r);
-      texteFlou(l2, lx, y - s - 11, A0 * (.34 + .22*bat), r);
+      // cartouche puis texte, nets
+      t2.globalAlpha = A0 * .62;
+      t2.fillStyle = 'rgba(3,8,15,1)';
+      t2.fillRect(lx - 3, y - s - 31, w + 6, 24);
+      t2.fillStyle = `rgba(${CYAN},1)`;
+      t2.globalAlpha = A0 * (.72 + .22*bat);
+      t2.fillText(l1, lx, y - s - 22);
+      t2.globalAlpha = A0 * (.58 + .22*bat);
+      t2.fillText(l2, lx, y - s - 11);
     }
     t2.globalAlpha = 1;
   };
