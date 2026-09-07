@@ -102,30 +102,75 @@ function holo(hote, graine){
   // Chaque étiquette VISE un sommet du modèle. Le décalage n'est
   // qu'un écart à l'écran : le trait de rappel relie toujours le
   // texte au point désigné.
-  const TEXTES = ['ORBON INTELLIGENCE', '43.6100°N 3.8767°E', 'H 128.00 m',
-                  'SHON 24 800 m²', 'NIV 34 / 34', 'ÉTAT · NON BÂTI',
-                  'REL 4.62.11', 'ÉCH 1:500', 'ALT +128.00', 'EMPRISE 2 356 m²'];
-  const etiquettes = TEXTES.map((t, k) => ({
-    idx: base + Math.floor((k + .28) / TEXTES.length * (P.length - base)),
-    dx: (k % 2 ? 1 : -1) * (74 + (k % 3) * 30),
-    dy: -34 + ((k * 37) % 90),
-    t
+  /* ---------------------------------------------------------
+     Choix des points d'accroche.
+
+     Les prendre par indice dans le tableau de sommets les groupait
+     tous au même endroit : dans un maillage, l'ordre des sommets suit
+     la construction, pas la géométrie. On les choisit donc par
+     HAUTEUR, et sur l'enveloppe, pour qu'ils s'étagent réellement.
+     --------------------------------------------------------- */
+  let yBas = 1e9, yHaut = -1e9;
+  for(let i = base; i < P.length; i++){
+    if(P[i][1] < yBas)  yBas  = P[i][1];
+    if(P[i][1] > yHaut) yHaut = P[i][1];
+  }
+  // Un point sur l'enveloppe, proche d'une hauteur donnée
+  const pointVers = (t, azimut) => {
+    const cible = yBas + (yHaut - yBas) * t;
+    let best = base, score = -1e9;
+    for(let i = base; i < P.length; i += 3){
+      const p = P[i];
+      const dh = Math.abs(p[1] - cible);
+      if(dh > (yHaut - yBas) * .05) continue;
+      const r = Math.hypot(p[0], p[2]);
+      const a = Math.atan2(p[2], p[0]);
+      let da = Math.abs(((a - azimut + Math.PI*3) % (Math.PI*2)) - Math.PI);
+      const sc = r * 2 - da - dh * 4;         // loin de l'axe, bon azimut
+      if(sc > score){ score = sc; best = i; }
+    }
+    return best;
+  };
+
+  /* ---- Étiquettes ----
+     Chacune vise un point du modèle et se place à un décalage dans le
+     MONDE, non plus à l'écran : le trait de rappel devient alors un
+     vrai segment de la scène, flouté et frangé comme le reste.
+     Les six dernières sont volontairement très éloignées : elles
+     restent visibles mais le flou les rend illisibles. */
+  const DEFS = [
+    // hauteur, azimut, décalage monde,           texte
+    [.92,  0.6, [ 1.15,  0.30, -0.55], 'ORBON INTELLIGENCE'],
+    [.78, -2.1, [-1.30,  0.22,  0.40], 'H 128.00 m'],
+    [.62,  1.9, [ 0.95,  0.35,  0.85], 'NIV 34 / 34'],
+    [.46, -0.7, [-1.10,  0.28, -0.70], 'SHON 24 800 m²'],
+    [.30,  2.6, [ 1.05, -0.15,  0.55], 'EMPRISE 62 x 38 m'],
+    [.14, -1.4, [-1.20, -0.10, -0.45], 'ÉTAT · NON BÂTI'],
+    [.55,  0.2, [ 1.25,  0.55,  0.20], '43.6100°N 3.8767°E'],
+    [.86, -2.8, [-1.05,  0.45,  0.60], 'ÉCH 1:500'],
+    // au loin, illisibles par le flou : elles font la profondeur
+    [.70,  1.2, [ 3.40,  0.90, -2.60], 'RELEVÉ 4.62.11 · SÉQUENCE 087'],
+    [.40, -2.4, [-3.60,  0.60,  2.30], 'ARCHIVE DES FUTURS NON CONSTRUITS'],
+    [.88,  2.9, [ 2.90,  1.40,  2.80], 'MODÉLISATION · BLENDER · glTF 2.0'],
+    [.22, -0.3, [-3.10, -0.40, -2.90], 'PROJET 01 · JAMAIS BÂTI'],
+    [.64, -1.0, [ 3.70, -0.20,  1.90], 'STRUCTURE PRIMAIRE ACIER'],
+    [.34,  2.2, [-2.80,  1.10, -2.40], 'ALTITUDE +128.00 NGF']
+  ];
+  const etiquettes = DEFS.map(([t, az, off, txt], k) => ({
+    idx: pointVers(t, az), off, t: txt, loin: k >= 8
   }));
+
+  const REMARQUABLES = [];
+  for(let k = 0; k < 6; k++)
+    REMARQUABLES.push(pointVers(.10 + k * .16, -2.6 + k * 1.05));
+  for(let i = 0; i < REMARQUABLES.length; i++)
+    ancres.push({ idx: REMARQUABLES[i], phase: alea()*6.28, n: i+1,
+                  h: (P[REMARQUABLES[i]][1] - SOL) * 42 });
 
   const feux = sommets.slice(0, 3).map(i => [P[i][0], P[i][1] + .05, P[i][2]]);
   const filsLumiere = neons;
 
   /* ---- Ancres accrochées à des points remarquables ---- */
-  // Réparties sur TOUT le tableau de sommets. Prendre les six
-  // premiers d'un pas régulier les regroupait dans un même coin du
-  // maillage : elles se comportaient alors toutes pareil.
-  const NB_SOM = P.length - base;
-  const REMARQUABLES = [];
-  for(let k = 0; k < 6; k++)
-    REMARQUABLES.push(base + Math.floor((k + .5) / 6 * NB_SOM));
-  for(let i = 0; i < REMARQUABLES.length; i++)
-    ancres.push({ idx: REMARQUABLES[i], phase: alea()*6.28, n: i+1,
-                  h: (P[REMARQUABLES[i]][1] - SOL) * 42 });
 
   /* --- Gnomon : les trois axes du relevé --- */
   const AX = 1.30;
@@ -589,10 +634,12 @@ function holo(hote, graine){
     const coins = [[0,0],[1,0],[0,1],[0,1],[1,0],[1,1]];
     for(const et of etiquettes){
       const A = P[et.idx];
+      // ancre = point visé + décalage MONDE
+      const B = [A[0] + et.off[0], A[1] + et.off[1], A[2] + et.off[2]];
       for(const [cu, cv2] of coins){
-        dEtiq[k++] = A[0]; dEtiq[k++] = A[1]; dEtiq[k++] = A[2];
-        dEtiq[k++] = et.dx + cu*et.w;
-        dEtiq[k++] = et.dy + cv2*et.h;
+        dEtiq[k++] = B[0]; dEtiq[k++] = B[1]; dEtiq[k++] = B[2];
+        dEtiq[k++] = -et.w/2 + cu*et.w;      // centré sur l'ancre
+        dEtiq[k++] = -et.h/2 + cv2*et.h;
         dEtiq[k++] = et.u0 + cu*(et.u1 - et.u0);
         dEtiq[k++] = et.v0 + cv2*(et.v1 - et.v0);
       }
@@ -703,6 +750,20 @@ function holo(hote, graine){
         if(prec) S.push({ a:prec, b:p, w:.7, al:.16, fam:1 });
         prec = p;
       }
+    }
+
+    // Traits de rappel des étiquettes : de vrais segments du monde,
+    // donc soumis au flou et à l'aberration comme tout le reste.
+    for(const et of etiquettes){
+      const A = P[et.idx];
+      const B = [A[0]+et.off[0], A[1]+et.off[1], A[2]+et.off[2]];
+      const C = [A[0]+et.off[0]*.30, A[1]+et.off[1]*.72, A[2]+et.off[2]*.30];
+      S.push({ a:A, b:C, w:.8,  al: et.loin ? .16 : .34, fam:1 });
+      S.push({ a:C, b:B, w:.8,  al: et.loin ? .16 : .34, fam:1 });
+      // petite croix sur le point visé
+      const e = .035;
+      S.push({ a:[A[0]-e,A[1],A[2]], b:[A[0]+e,A[1],A[2]], w:1.0, al:.42, fam:1 });
+      S.push({ a:[A[0],A[1]-e,A[2]], b:[A[0],A[1]+e,A[2]], w:1.0, al:.42, fam:1 });
     }
 
     // Arêtes lumineuses : une onde remonte chaque spirale, comme les

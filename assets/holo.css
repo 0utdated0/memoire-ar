@@ -145,15 +145,15 @@ body::before{
 
 /* Cartouches des marges ------------------------------------ */
 .releve{
-  position:fixed;z-index:3;
+  position:fixed;z-index:11;
   font-family:ui-monospace,"SFMono-Regular",monospace;
   font-size:9.5px;line-height:2.1;letter-spacing:.06em;
   color:var(--gris-archive);
   white-space:nowrap;pointer-events:none;user-select:none;
 }
-/* Les cartouches des marges sont loin dans la scène : ils subissent
-   la même profondeur de champ que le reste. */
-.releve{filter:blur(1.3px)}
+/* Les cartouches des marges sont de l'interface FIXE, pas des objets
+   de la scène : ni flou, ni grain, ni vignettage ne doivent les
+   toucher. Ils passent donc au-dessus de toutes ces couches. */
 .releve.g{top:26vh;left:var(--marge)}
 .releve.d{top:34vh;right:var(--marge);text-align:right}
 .releve em{font-style:normal;color:var(--bleu-blueprint)}
