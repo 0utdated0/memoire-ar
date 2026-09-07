@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05060E">
+<title>Archive des futurs non construits</title>
+<meta name="description" content="Modèles en réalité augmentée des projets d'architecture spéculative étudiés dans le mémoire.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Instrument+Sans:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./assets/holo.css">
+</head>
+<body>
+
+<main class="page">
+
+  <div class="bandeau leve">
+    <span>Archive des futurs non construits</span>
+    <span>2026</span>
+  </div>
+
+  <div class="scene" id="scene" aria-hidden="true"></div>
+
+  <h1 class="leve">Rien de tout<br>ceci n'a été <span class="irise">bâti</span>.</h1>
+
+  <p class="dit leve" style="margin-top:22px">
+    Les projets étudiés dans ce mémoire n'ont jamais quitté le papier. Ils sont ici
+    remodélisés, puis rendus à l'échelle. Scannez une vignette imprimée et le bâtiment
+    se lève de la page.
+  </p>
+
+  <ul class="projets">
+    <li class="projet">
+      <a href="./projets/projet-01.html">
+        <span class="rang">01</span>
+        <span class="titre">Cube de test</span>
+        <span class="etat">Prêt</span>
+      </a>
+    </li>
+    <!-- Décommentez au fur et à mesure.
+    <li class="projet">
+      <a href="./projets/projet-02.html">
+        <span class="rang">02</span>
+        <span class="titre">Titre du deuxième projet</span>
+        <span class="etat">Prêt</span>
+      </a>
+    </li>
+    <li class="projet">
+      <a href="./projets/projet-03.html">
+        <span class="rang">03</span>
+        <span class="titre">Titre du troisième projet</span>
+        <span class="etat">Prêt</span>
+      </a>
+    </li>
+    -->
+  </ul>
+
+  <footer>
+    Modélisation Blender, format glTF 2.0 du Khronos Group, suivi d'image MindAR,
+    hébergement autonome. Aucune application à installer, aucun compte à créer.<br>
+    Prénom Nom, école, année.
+  </footer>
+
+</main>
+
+<script src="./assets/holo.js"></script>
+<script>holo(document.getElementById('scene'), 20260907);</script>
+
+</body>
+</html>
