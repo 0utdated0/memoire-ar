@@ -283,6 +283,17 @@ function holo(hote, graine){
     arcs.push({ pts, ph: alea()*6.28, v: .0004 + alea()*.0009 });
   }
 
+  /* La trame de sol est découpée une fois pour toutes en quatre
+     couronnes d'opacité décroissante. Le faire à chaque image, pour
+     chaque tranche et chaque canal, coûtait très cher pour rien. */
+  const trameCour = [0,1].map(c => ({
+    seg: trame.filter(([a,b]) => {
+      const d = Math.max(Math.hypot(P[a][0],P[a][2]), Math.hypot(P[b][0],P[b][2]));
+      return d >= c*G/2 && d < (c+1)*G/2;
+    }),
+    al: .13 * (1 - c*.42)
+  }));
+
   /* Quels sommets appartiennent au bâtiment et non au décor.
      C'est sur eux, et eux seuls, que se règle la mise au point. */
   const estBati = P.map(p => Math.hypot(p[0], p[2]) < 1.35);
@@ -290,13 +301,28 @@ function holo(hote, graine){
   /* =========================================================
      PROJECTION
      ========================================================= */
-  let L = 0, H = 0;
+  /* Deux calques hors écran en définition réduite. Redessiné à
+     l'échelle 1, un calque à 45 % est légèrement flou, un calque à
+     16 % l'est beaucoup : c'est le rééchantillonnage qui fait le
+     flou, sans aucun coût de tracé supplémentaire. */
+  const ECH = [.45, .16];
+  const bufs = ECH.map(() => {
+    const c = document.createElement('canvas');
+    return { c, x: c.getContext('2d') };
+  });
+
+  let L = 0, H = 0, DPR = 1;
   const redim = () => {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
+    DPR = Math.min(devicePixelRatio || 1, 2);
     L = hote.clientWidth; H = hote.clientHeight;
-    cv.width = L*dpr; cv.height = H*dpr;
+    cv.width = L*DPR; cv.height = H*DPR;
     cv.style.width = L+'px'; cv.style.height = H+'px';
-    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    bufs.forEach((b,i) => {
+      b.c.width  = Math.max(1, Math.round(L*DPR*ECH[i]));
+      b.c.height = Math.max(1, Math.round(H*DPR*ECH[i]));
+      b.x.setTransform(DPR*ECH[i], 0, 0, DPR*ECH[i], 0, 0);
+    });
   };
 
   let angle = .70, tilt = .34;
@@ -348,7 +374,11 @@ function holo(hote, graine){
   ];
 
   // Le flou coûte cher : on l'écarte sur petit écran.
-  const flouActif = () => L > 760 && !lent;
+  // Qualité adaptative. On mesure la durée des images ; si la cadence
+  // s'effondre durablement, le flou est abandonné plutôt que de faire
+  // ramer la page. Il revient si la machine respire à nouveau.
+  let cadence = 16, degrade = false;
+  const flouActif = () => L > 760 && !lent && !degrade;
 
   // ctx.filter est ignoré par plusieurs moteurs lorsqu'on dessine en
   // composition additive, ce qui est notre cas. On ne s'y fie plus :
@@ -358,13 +388,27 @@ function holo(hote, graine){
   const trace = () => {
     ctx.globalCompositeOperation = 'source-over';
     ctx.clearRect(0,0,L,H);
+    for(const b of bufs){
+      b.x.globalCompositeOperation = 'source-over';
+      b.x.clearRect(0,0,L,H);
+      b.x.globalCompositeOperation = 'lighter';
+    }
     ctx.globalCompositeOperation = 'lighter';
 
     for(const canal of CANAUX){
-      ctx.strokeStyle = canal.c;
-      ctx.fillStyle   = canal.c;
+      ctx.strokeStyle = canal.c; ctx.fillStyle = canal.c;
+      for(const b of bufs){ b.x.strokeStyle = canal.c; b.x.fillStyle = canal.c; }
       dessine(canal.k);
     }
+
+    // Réagrandissement des calques : le lissage bilinéaire du
+    // navigateur fait le flou, sans un seul tracé de plus.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);
+    for(const b of bufs) ctx.drawImage(b.c, 0, 0, cv.width, cv.height);
+    ctx.restore();
 
     ctx.globalCompositeOperation = 'source-over';
   };
@@ -393,91 +437,65 @@ function holo(hote, graine){
     let zMin = 1e9, zMax = -1e9;
     for(const q of pts){ if(q[2] < zMin) zMin = q[2]; if(q[2] > zMax) zMax = q[2]; }
 
-    const bandes = [];
-    if(flouActif()){
-      const NB = 5;
-      for(let i = 0; i < NB; i++){
-        const a = zMin + (zMax - zMin) * i / NB;
-        const b = zMin + (zMax - zMin) * (i+1) / NB;
-        // distance au plan de netteté, en demi-profondeurs de bâtiment
-        const d = Math.min(2, Math.abs(((a+b)/2 - zMid) / demi));
-        const r = Math.min(7, 5.0 * d * d);
-        // Plus de compensation d'opacité : le noyau conserve déjà
-        // l'énergie totale du trait, il ne fait que l'étaler.
-        bandes.push({ min:(i===0 ? -1e9 : a), max:(i===NB-1 ? 1e9 : b), r });
-      }
-    } else bandes.push({ min:-1e9, max:1e9, r:0 });
+    const flou = flouActif();
 
-    const dansBande = (a,b,bd) => {
-      const z = (pts[a][2] + pts[b][2]) / 2;
-      return z >= bd.min && z < bd.max;
+
+    // cible 0 : image nette. 1 : calque doux. 2 : calque très flou.
+    const CIBLES = [ctx, bufs[0].x, bufs[1].x];
+    const lot = (seg, alpha, lw, cible, dash) => {
+      const c = CIBLES[cible];
+      if(dash){ c.setLineDash(dash); c.lineDashOffset = -temps * .02; }
+      else c.setLineDash([]);
+      c.globalAlpha = Math.min(1, alpha);
+      c.lineWidth = lw;
+      c.beginPath();
+      for(const [a,b] of seg){
+        c.moveTo(pts[a][0], pts[a][1]);
+        c.lineTo(pts[b][0], pts[b][1]);
+      }
+      c.stroke();
+      c.setLineDash([]);
     };
 
-    const lot = (couche, alpha, lw, bd, dash) => {
-      const seg = [];
-      for(const [a,b] of couche) if(dansBande(a,b,bd)) seg.push([a,b]);
-      if(!seg.length) return;
+    // Chaque couche est parcourue UNE fois et ses segments rangés
+    // dans la tranche qui leur revient. On dessine ensuite tranche
+    // par tranche. C'est là que se joue la fluidité.
+    const couches = [
+      ...trameCour.map(t => ({ seg:t.seg, al:t.al, lw:.6 })),
+      { seg:resille, al:.22, lw:.5 },
+      { seg:cables,  al:.30, lw:.5, dash:[3,4] },
+      { seg:dalles,  al:.50, lw:.8 },
+      { seg:porteur, al:.68, lw:1.0 }
+    ];
 
-      const r = bd.r || 0;
-      if(dash){ ctx.setLineDash(dash); ctx.lineDashOffset = -temps * .02; }
-      else ctx.setLineDash([]);
-
-      const chemin = (ox, oy) => {
-        ctx.beginPath();
-        for(const [a,b] of seg){
-          ctx.moveTo(pts[a][0]+ox, pts[a][1]+oy);
-          ctx.lineTo(pts[b][0]+ox, pts[b][1]+oy);
+    // Chaque segment calcule SON flou, en continu. On les regroupe
+    // ensuite par valeur voisine, en huit crans, uniquement pour
+    // pouvoir tracer par lots. Aucun palier visible, et le nombre de
+    // tracés reste borné.
+    const Q = 4;
+    for(const co of couches){
+      const casiers = new Map();
+      for(const sgt of co.seg){
+        let n = 0;
+        if(flou){
+          const z = (pts[sgt[0]][2] + pts[sgt[1]][2]) / 2;
+          const d = Math.min(2, Math.abs((z - zMid) / demi));
+          n = Math.min(1, d * d * .62);
         }
-        ctx.stroke();
-      };
-
-      if(r < .3){
-        ctx.globalAlpha = alpha; ctx.lineWidth = lw;
-        chemin(0, 0);
-        ctx.setLineDash([]);
-        return;
+        // deux cibles voisines au plus : net, doux, très flou
+        const paires = n < .5 ? [[0, 1 - n*2], [1, n*2]]
+                              : [[1, 2 - n*2], [2, n*2 - 1]];
+        for(const [cible, p] of paires){
+          if(p < .14) continue;
+          const cran = Math.min(Q, Math.max(1, Math.round(p * Q)));
+          const cle = cible * 16 + cran;
+          let liste = casiers.get(cle);
+          if(!liste) casiers.set(cle, liste = []);
+          liste.push(sgt);
+        }
       }
-
-      // Noyau de flou : un point central, une couronne intérieure et
-      // une couronne extérieure. Les poids somment à 1, donc la
-      // luminosité totale du trait est conservée : il s'étale au lieu
-      // de s'éclaircir. Le trait s'épaissit légèrement avec le rayon,
-      // comme le fait un vrai cercle de confusion.
-      const N = Math.max(6, Math.min(12, Math.round(r * 1.9) + 4));
-      ctx.lineWidth = lw * (1 + r * .16);
-
-      ctx.globalAlpha = alpha * .26;                 // cœur
-      chemin(0, 0);
-
-      ctx.globalAlpha = alpha * .46 / N;             // couronne intérieure
-      for(let i = 0; i < N; i++){
-        const th = i/N * Math.PI*2;
-        chemin(Math.cos(th)*r*.48, Math.sin(th)*r*.48);
-      }
-
-      ctx.globalAlpha = alpha * .28 / N;             // couronne extérieure
-      for(let i = 0; i < N; i++){
-        const th = (i + .5)/N * Math.PI*2;
-        chemin(Math.cos(th)*r, Math.sin(th)*r);
-      }
-      ctx.setLineDash([]);
-    };
-
-    for(const bd of bandes){
-      // La trame de sol s'efface avec l'éloignement du centre :
-      // quatre couronnes d'opacité décroissante.
-      for(let c = 0; c < 4; c++){
-        const sousLot = trame.filter(([a,b]) => {
-          const pa = P[a], pb = P[b];
-          const d = Math.max(Math.hypot(pa[0],pa[2]), Math.hypot(pb[0],pb[2]));
-          return d >= c*G/4 && d < (c+1)*G/4;
-        });
-        lot(sousLot, .13 * (1 - c*.28), .6, bd);
-      }
-      lot(resille, .22, .5, bd);
-      lot(cables,  .30, .5, bd, [3,4]);   // pointillés défilants
-      lot(dalles,  .50, .8, bd);
-      lot(porteur, .68,1.0, bd);
+      for(const [cle, liste] of casiers)
+        lot(liste, co.al * ((cle % 16) / Q), co.lw, (cle / 16) | 0, co.dash);
     }
 
     // ---- Champ de courbes de niveau, animé -------------------
@@ -590,15 +608,18 @@ function holo(hote, graine){
       const ph = (temps * arc.v + arc.ph) % 1;      // la lumière glisse
       const n  = arc.pts.length;
       const i0 = Math.floor(ph * n);
-      const len = 13;
-      for(let j = 0; j < len; j++){
-        const i = (i0 + j) % (n - 1);
-        const a = abS(proj(arc.pts[i])), b = abS(proj(arc.pts[i+1]));
-        const g = Math.sin(j / len * Math.PI);       // fondu aux extrémités
+      // Cinq tronçons au lieu de treize : le fondu reste lisible et
+      // le coût est divisé par presque trois.
+      const len = 15, TR = 5;
+      for(let t2 = 0; t2 < TR; t2++){
+        const g = Math.sin((t2 + .5) / TR * Math.PI);
         ctx.globalAlpha = .95 * g;
         ctx.lineWidth = .8 + 2.1 * g;
         ctx.beginPath();
-        ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+        for(let j = Math.floor(t2*len/TR); j <= Math.floor((t2+1)*len/TR); j++){
+          const q = abS(proj(arc.pts[(i0 + j) % n]));
+          j === Math.floor(t2*len/TR) ? ctx.moveTo(q[0],q[1]) : ctx.lineTo(q[0],q[1]);
+        }
         ctx.stroke();
       }
       // le reste de l'arc, à peine visible
@@ -666,8 +687,16 @@ function holo(hote, graine){
     ctx.globalAlpha = 1;
   };
 
+  let tPrec = 0;
   const boucle = (t) => {
     if(!vivant) return;
+    if(tPrec){
+      const dt = Math.min(200, t - tPrec);
+      cadence += (dt - cadence) * .06;          // moyenne glissante
+      if(!degrade && cadence > 34) degrade = true;   // sous ~29 images/s
+      else if(degrade && cadence < 20) degrade = false;
+    }
+    tPrec = t;
     temps = t || 0;
     if(!tire && !lent){
       vitesse += (AUTO - vitesse) * .035;
