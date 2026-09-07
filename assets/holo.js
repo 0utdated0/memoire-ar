@@ -47,14 +47,16 @@ function holo(hote, graine){
      --------------------------------------------------------- */
   const SOL = -1.15, HAUT = 2.25;
   const PENCHE = .21;                       // inclinaison de l'ensemble
-  const R0 = .74, TOURS = 1.6;
+  const R0 = .86, TOURS = 2.15;
 
   // Incline l'ensemble : c'est l'oblique qui fait la tour.
   const pencher = (p) => {
     const c = Math.cos(PENCHE), s2 = Math.sin(PENCHE);
     return [p[0]*c - (p[1]-SOL)*s2, (p[1]-SOL)*c + p[0]*s2 + SOL, p[2]];
   };
-  const rayon = (t) => R0 * (1 - .70*t);
+  // Décroissance non linéaire : la base reste large, le sommet
+  // s'effile vite. Un rétrécissement régulier donnait un cône.
+  const rayon = (t) => R0 * (1 - .82 * Math.pow(t, 1.45));
   const surHelice = (t, phase) => {
     const th = t*TOURS*Math.PI*2 + phase, r = rayon(t);
     return pencher([Math.cos(th)*r, SOL + t*HAUT, Math.sin(th)*r]);
@@ -79,30 +81,42 @@ function holo(hote, graine){
   const pied3 = pt(...pencher([-R0*.72, SOL - .05, -R0*.85]));
   sg(porteur, pied3, tete);
 
-  // Cerceaux, et treillis reliant les deux hélices à la charpente
+  // Troisième spirale, plus large et plus lente : c'est elle qui
+  // ouvre la silhouette et empêche l'ensemble de se lire comme un cône.
+  const externe = [];
+  for(let i = 0; i <= NH; i++){
+    const t = i/NH;
+    const th = t*(TOURS*.62)*Math.PI*2 + 2.4;
+    const r = R0 * 1.34 * (1 - .78*Math.pow(t, 1.9));
+    const idx = pt(...pencher([Math.cos(th)*r, SOL + t*HAUT*.92, Math.sin(th)*r]));
+    externe.push(idx);
+    if(i) sg(porteur, externe[i-1], idx);
+  }
+
+  // Cinq arceaux PARTIELS seulement. Des anneaux complets, plus des
+  // croisillons, remplissaient le volume et fabriquaient un cône.
   const cerceaux = [];
-  for(let k = 0; k <= 11; k++){
-    const t = k/11, r = rayon(t), anneau = [];
-    for(let i = 0; i < 18; i++){
-      const th = i/18 * Math.PI*2;
+  for(let k = 0; k <= 4; k++){
+    const t = .07 + k*.22, r = rayon(t), anneau = [], NA = 20;
+    const d0 = 1.1 + k*1.7;                    // chaque arceau tourné
+    for(let i = 0; i < NA; i++){
+      const th = d0 + (i/(NA-1)) * Math.PI * 1.35;   // trois quarts d'anneau
       anneau.push(pt(...pencher([Math.cos(th)*r, SOL + t*HAUT, Math.sin(th)*r])));
     }
-    for(let i = 0; i < 18; i++) sg(resille, anneau[i], anneau[(i+1)%18]);
+    for(let i = 0; i < NA-1; i++) sg(resille, anneau[i], anneau[i+1]);
     cerceaux.push({ anneau, t, r });
-    const ih = Math.round(t*NH);
-    sg(resille, helices[0][Math.min(ih, NH)], anneau[0]);
-    sg(resille, helices[1][Math.min(ih, NH)], anneau[9]);
-    // raidisseurs vers la charpente
-    if(k % 2 === 0) sg(resille, anneau[13], pied);
+    const ih = Math.min(Math.round(t*NH), NH);
+    sg(resille, helices[0][ih], anneau[0]);
+    sg(resille, helices[1][ih], anneau[NA-1]);
+    sg(resille, externe[ih], anneau[Math.floor(NA/2)]);
   }
-  // Croisillons entre cerceaux successifs
-  for(let k = 0; k < cerceaux.length - 1; k++){
-    const a = cerceaux[k].anneau, b = cerceaux[k+1].anneau;
-    for(let i = 0; i < 18; i += 3){
-      sg(resille, a[i], b[(i+2) % 18]);
-      sg(resille, b[i], a[(i+2) % 18]);
-    }
-  }
+
+  // Traverses radiales entre les deux hélices, tous les dix pas :
+  // elles disent la cage sans la refermer.
+  for(let i = 4; i < NH; i += 10)
+    sg(resille, helices[0][i], helices[1][i]);
+  for(let i = 9; i < NH; i += 14)
+    sg(resille, helices[0][i], externe[Math.min(i+6, NH)]);
 
   // Ancres accrochées à l'hélice, réparties sur la hauteur
   const HAUTEURS = [.12, .28, .44, .60, .74, .88];
@@ -116,9 +130,9 @@ function holo(hote, graine){
      un cône pour l'exécutif, une par mois ; un cylindre plus haut,
      le plus rapide. On garde ce rapport de vitesses. --- */
   const volumes = [
-    { forme:'cube',     t:.20, taille:.40, v:.00013 },
-    { forme:'cone',     t:.50, taille:.30, v:.00042 },
-    { forme:'cylindre', t:.76, taille:.20, v:.00110 }
+    { forme:'cube',     t:.17, taille:.62, v:.00013 },
+    { forme:'cone',     t:.46, taille:.46, v:.00042 },
+    { forme:'cylindre', t:.73, taille:.28, v:.00110 }
   ];
   for(const v of volumes){
     v.centre = pencher([0, SOL + v.t*HAUT, 0]);
@@ -340,7 +354,7 @@ function holo(hote, graine){
     uniform float uFocus, uDemi, uForce, uMaxCoC;
 
     varying vec3  vCol;    // teinte, selon la famille
-    varying float vTrav;   // position en travers du trait, en pixels
+    varying vec2  vP, vA, vB;   // fragment et extrémités, en pixels
     varying float vDemi;   // demi-épaisseur nette
     varying float vCoC;    // rayon de flou
     varying float vOp;
@@ -378,9 +392,14 @@ function holo(hote, graine){
       // Le bandeau doit être assez large pour contenir l'étalement.
       float rayon = vDemi + vCoC + 1.0;
 
-      vec2 pos = mix(ea.xy, eb.xy, aCoin.x) + nor * aCoin.y * rayon;
-      vTrav = aCoin.y * rayon;
-      vOp   = aStyle.y;
+      // Le bandeau déborde AUSSI dans le sens de la longueur, sinon
+      // le flou est tranché net aux deux bouts du trait.
+      vec2 dirN = dir / lg;
+      vec2 pos = mix(ea.xy, eb.xy, aCoin.x)
+               + dirN * (aCoin.x * 2.0 - 1.0) * rayon
+               + nor  * aCoin.y * rayon;
+      vP = pos; vA = ea.xy; vB = eb.xy;
+      vOp = aStyle.y;
 
       // 0 le bâtiment, 1 l'appareillage de relevé, 2 les éclats.
       vCol = aStyle.z < 0.5 ? vec3(0.82, 0.85, 0.90)    // Blanc cassé
@@ -394,9 +413,14 @@ function holo(hote, graine){
   const FS_TRAIT = `
     precision highp float;
     varying vec3  vCol;
-    varying float vTrav, vDemi, vCoC, vOp;
+    varying vec2  vP, vA, vB;
+    varying float vDemi, vCoC, vOp;
     void main(){
-      float d = abs(vTrav);
+      // Distance au SEGMENT, pas à la droite : les extrémités
+      // deviennent des demi-disques et se diffusent comme le reste.
+      vec2 pa = vP - vA, ba = vB - vA;
+      float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+      float d = length(pa - ba * h);
       float e = max(vCoC, 0.6);                    // largeur du dégradé
       // Bord franc quand le flou est nul, bord étalé quand il est fort.
       float a = 1.0 - smoothstep(max(vDemi - e, 0.0), vDemi + e, d);
