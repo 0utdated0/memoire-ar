@@ -231,11 +231,14 @@ function holo(hote, graine){
   for(const [a, b] of trame){
     const d = rayonSol(a, b);
     statiques.push({ a:P[a], b:P[b], w:.9, fam:1,
-                     al: .26 * Math.max(.18, 1 - d / (G * 1.05)) });
+                     al: .10 * Math.max(.18, 1 - d / (G * 1.05)) });
   }
-  pousse(resille, .8,  .22);
-  pousse(dalles,  1.1, .50);
-  pousse(porteur, 1.5, .70);
+  // Opacités fortement réduites. En composition additive, la densité
+  // du modèle extrait faisait saturer le blanc : au-delà de 1, les
+  // valeurs s'écrasent et tout le dessin disparaît dans un aplat.
+  pousse(resille, .7,  .075);
+  pousse(dalles,  .9,  .17);
+  pousse(porteur, 1.2, .30);
 
   // Cercles d'instrument et leurs graduations
   const CI = [0, SOL + .95, 0];
