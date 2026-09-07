@@ -116,18 +116,9 @@ function holo(hote, graine){
   const filsLumiere = neons;
 
   /* ---- Ancres accrochées à des points remarquables ---- */
-  // On choisit les ancres sur l'ENVELOPPE : des points éloignés de
-  // l'axe, donc réellement visibles de l'extérieur. Pris au cœur du
-  // modèle, ils seraient masqués en permanence.
   const cands = [];
-  for(let i = base; i < P.length; i++){
-    const r = Math.hypot(P[i][0], P[i][2]);
-    if(r > .78) cands.push({ i, r, y:P[i][1] });
-  }
-  cands.sort((a,b) => a.y - b.y);
-  const REMARQUABLES = [];
-  for(let k = 0; k < 6 && cands.length; k++)
-    REMARQUABLES.push(cands[Math.floor((k + .5) / 6 * cands.length)].i);
+  for(let i = base; i < P.length; i += 137) cands.push(i);
+  const REMARQUABLES = cands.slice(0, 6);
   for(let i = 0; i < REMARQUABLES.length; i++)
     ancres.push({ idx: REMARQUABLES[i], phase: alea()*6.28, n: i+1,
                   h: (P[REMARQUABLES[i]][1] - SOL) * 42 });
@@ -716,28 +707,6 @@ function holo(hote, graine){
     }
   };
 
-  // Occlusion : une ancre est masquée si un point du bâtiment se
-  // projette au même endroit à l'écran, mais plus près de la caméra.
-  // On échantillonne un sommet sur quatre, ce qui suffit largement.
-  const ECHANT = [];
-  for(let i = 0; i < P.length; i += 4) ECHANT.push(P[i]);
-  // Valeurs réglées par balayage : elles laissent 2 à 5 ancres
-  // visibles selon l'angle, sur les 6. Trop strict, aucune ne
-  // disparaissait ; trop lâche, toutes restaient masquées.
-  const RAYON = 22;        // en pixels
-  const MARGE = .20;       // il faut être franchement devant
-  const MINI  = 3;         // et être plusieurs, pas un sommet isolé
-  const masquee = (q) => {
-    let n = 0;
-    for(let i = 0; i < ECHANT.length; i++){
-      const e = proj(ECHANT[i]);
-      if(e[2] >= q[2] - MARGE) continue;
-      const dx = e[0] - q[0], dy = e[1] - q[1];
-      if(dx*dx + dy*dy < RAYON*RAYON && ++n >= MINI) return true;
-    }
-    return false;
-  };
-
   // ctx.filter est fiable ici : on n'est pas en composition additive.
   let filtreOK = false;
   try {
@@ -813,7 +782,7 @@ function holo(hote, graine){
     for(const an of ancres){
       const q = proj(P[an.idx]);
       an.ecran = q;
-      const visible = !masquee(q);
+      const visible = q[2] <= .28;
       an.vis = visible;
 
       // Le relevé ne disparaît jamais : quand son point passe derrière
