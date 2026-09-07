@@ -39,158 +39,94 @@ function holo(hote, graine){
   const sg  = (c,a,b) => c.push([a,b]);
   const quad = (c,a,b,d,e) => { sg(c,a,b); sg(c,b,d); sg(c,d,e); sg(c,e,a); };
 
-  /* --- Mât central : la structure porteuse unique --- */
-  const MAT = .17, HAUT = 1.95, SOL = -1.15;
-  const matBas = [], matHaut = [];
-  for(const [x,z] of [[-MAT,-MAT],[MAT,-MAT],[MAT,MAT],[-MAT,MAT]]){
-    matBas.push(pt(x, SOL, z));
-    matHaut.push(pt(x, SOL + HAUT, z));
-  }
-  quad(porteur, ...matBas); quad(porteur, ...matHaut);
-  for(let i = 0; i < 4; i++) sg(porteur, matBas[i], matHaut[i]);
-  // Croisillons du mât, en X sur toute la hauteur
-  for(let i = 0; i < 11; i++){
-    const y0 = SOL + HAUT*i/11, y1 = SOL + HAUT*(i+1)/11;
-    sg(resille, pt(-MAT,y0,-MAT), pt(MAT,y1,-MAT));
-    sg(resille, pt( MAT,y0,-MAT), pt(-MAT,y1,-MAT));
-    sg(resille, pt( MAT,y0, MAT), pt(-MAT,y1, MAT));
-  }
+  /* ---------------------------------------------------------
+     Ossature d'après la tour Tatline (1919, jamais construite) :
+     une double hélice ascendante et penchée, tenue par une
+     charpente diagonale, à l'intérieur de laquelle sont suspendus
+     des volumes géométriques qui tournent sur eux-mêmes.
+     --------------------------------------------------------- */
+  const SOL = -1.15, HAUT = 2.25;
+  const PENCHE = .21;                       // inclinaison de l'ensemble
+  const R0 = .74, TOURS = 1.6;
 
-  /* --- Plateaux en porte-à-faux, suspendus au mât --- */
-  const nbPlateaux = 7 + Math.floor(alea()*2);
-  const rot0 = alea() * Math.PI * 2;
-  for(let i = 0; i < nbPlateaux; i++){
-    const y   = SOL + .26 + (HAUT - .46) * (i / nbPlateaux);
-    const ep  = .05;
-    // angle d'or : les porte-à-faux rayonnent sans jamais se répéter
-    const rot = rot0 + i * 2.39996;
-    const l   = .74 + alea()*.46;         // longue portée d'un côté
-    const p   = .30 + alea()*.14;
-    const dx  = Math.cos(rot), dz = Math.sin(rot);
+  // Incline l'ensemble : c'est l'oblique qui fait la tour.
+  const pencher = (p) => {
+    const c = Math.cos(PENCHE), s2 = Math.sin(PENCHE);
+    return [p[0]*c - (p[1]-SOL)*s2, (p[1]-SOL)*c + p[0]*s2 + SOL, p[2]];
+  };
+  const rayon = (t) => R0 * (1 - .70*t);
+  const surHelice = (t, phase) => {
+    const th = t*TOURS*Math.PI*2 + phase, r = rayon(t);
+    return pencher([Math.cos(th)*r, SOL + t*HAUT, Math.sin(th)*r]);
+  };
 
-    // Plateau décentré : il déborde très largement d'un seul côté
-    const cx = dx * (l*.52), cz = dz * (l*.52);
-    const coins = [];
-    for(const [sx,sz] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
-      const x = cx + sx*l*.5*Math.abs(dx ? 1 : 1) + sx*0;
-      const z = cz + sz*p;
-      coins.push([cx + sx*l*.5, cz + sz*p]);
+  const NH = 84;
+  const helices = [[], []];
+  for(let h = 0; h < 2; h++){
+    for(let i = 0; i <= NH; i++){
+      const idx = pt(...surHelice(i/NH, h*Math.PI));
+      helices[h].push(idx);
+      if(i) sg(porteur, helices[h][i-1], idx);
     }
-    const bas = [], hau = [];
-    for(const [x,z] of coins){
-      bas.push(pt(x, y, z));
-      hau.push(pt(x, y+ep, z));
-    }
-    quad(dalles, ...bas); quad(dalles, ...hau);
-    for(let k = 0; k < 4; k++) sg(dalles, bas[k], hau[k]);
-
-    // Nervures : subdivision fine du plateau, pas des fenêtres
-    for(let k = 1; k < 7; k++){
-      const t = k/7;
-      sg(resille,
-         pt(coins[0][0] + (coins[1][0]-coins[0][0])*t, y+ep, coins[0][1] + (coins[1][1]-coins[0][1])*t),
-         pt(coins[3][0] + (coins[2][0]-coins[3][0])*t, y+ep, coins[3][1] + (coins[2][1]-coins[3][1])*t));
-    }
-
-    // Garde-corps périphérique, en retrait du nez de dalle
-    const gc = [];
-    for(const [x,z] of coins){
-      const rx = cx + (x-cx)*.90, rz = cz + (z-cz)*.90;
-      gc.push(pt(rx, y+ep+.075, rz));
-    }
-    quad(resille, ...gc);
-    for(let k = 0; k < 4; k++){
-      sg(resille, gc[k], pt(P[gc[k]][0], y+ep, P[gc[k]][2]));
-      // montants intermédiaires
-      const n = gc[(k+1)%4];
-      for(let m = 1; m < 4; m++){
-        const t = m/4;
-        const xx = P[gc[k]][0] + (P[n][0]-P[gc[k]][0])*t;
-        const zz2 = P[gc[k]][2] + (P[n][2]-P[gc[k]][2])*t;
-        sg(resille, pt(xx, y+ep, zz2), pt(xx, y+ep+.075, zz2));
-      }
-    }
-
-    // Poutre-caisson sous dalle, treillis en N
-    const nez = [ (coins[1][0]+coins[2][0])/2, (coins[1][1]+coins[2][1])/2 ];
-    const pied = [ (coins[0][0]+coins[3][0])/2, (coins[0][1]+coins[3][1])/2 ];
-    const prof = .13;
-    for(let m = 0; m <= 6; m++){
-      const t = m/6;
-      const xx = pied[0] + (nez[0]-pied[0])*t, zz2 = pied[1] + (nez[1]-pied[1])*t;
-      sg(resille, pt(xx, y, zz2), pt(xx, y-prof*(1-t*.55), zz2));
-      if(m < 6){
-        const t2 = (m+1)/6;
-        const x2 = pied[0] + (nez[0]-pied[0])*t2, z2 = pied[1] + (nez[1]-pied[1])*t2;
-        sg(resille, pt(xx, y-prof*(1-t*.55), zz2), pt(x2, y, z2));
-      }
-    }
-
-    // Nacelle technique suspendue sous une dalle sur deux
-    if(i % 2 === 0){
-      const nx = cx + (nez[0]-cx)*.62, nz = cz + (nez[1]-cz)*.62;
-      const ny = y - .30, np = [];
-      for(const [sx,sz] of [[-1,-1],[1,-1],[1,1],[-1,1]])
-        np.push(pt(nx + sx*.075, ny, nz + sz*.055));
-      quad(dalles, ...np);
-      for(const q of np) sg(cables, q, pt(P[q][0], y, P[q][2]));
-    }
-
-    // Câbles de suspension depuis le sommet du mât, en pointillés
-    const ancrage = pt(0, SOL + HAUT - .06, 0);
-    sg(cables, ancrage, bas[1]);
-    sg(cables, ancrage, bas[2]);
-    sg(cables, pt(0, SOL + HAUT - .34, 0), bas[0]);
-
-    ancres.push({ idx: hau[1], phase: alea()*6.28, n: i+1, h: (y - SOL) * 12.4 });
   }
 
-  /* --- Anneaux structurels autour du mât, en hauteur --- */
-  for(let a = 0; a < 3; a++){
-    const y = SOL + .55 + a * .52, r = .40 + a * .085;
-    const prev = [];
-    for(let i = 0; i < 16; i++){
-      const t = i/16 * Math.PI*2;
-      prev.push(pt(Math.cos(t)*r, y, Math.sin(t)*r));
+  // Charpente diagonale : la grande oblique qui tient tout.
+  const pied = pt(...pencher([-R0*1.16, SOL - .05, 0]));
+  const tete = pt(...pencher([ rayon(1)*.5, SOL + HAUT + .16, 0]));
+  sg(porteur, pied, tete);
+  const pied2 = pt(...pencher([-R0*.72, SOL - .05, R0*.85]));
+  sg(porteur, pied2, tete);
+  const pied3 = pt(...pencher([-R0*.72, SOL - .05, -R0*.85]));
+  sg(porteur, pied3, tete);
+
+  // Cerceaux, et treillis reliant les deux hélices à la charpente
+  const cerceaux = [];
+  for(let k = 0; k <= 11; k++){
+    const t = k/11, r = rayon(t), anneau = [];
+    for(let i = 0; i < 18; i++){
+      const th = i/18 * Math.PI*2;
+      anneau.push(pt(...pencher([Math.cos(th)*r, SOL + t*HAUT, Math.sin(th)*r])));
     }
-    for(let i = 0; i < 16; i++) sg(resille, prev[i], prev[(i+1)%16]);
-    for(let i = 0; i < 16; i += 4) sg(cables, prev[i], matHaut[i % 4]);
+    for(let i = 0; i < 18; i++) sg(resille, anneau[i], anneau[(i+1)%18]);
+    cerceaux.push({ anneau, t, r });
+    const ih = Math.round(t*NH);
+    sg(resille, helices[0][Math.min(ih, NH)], anneau[0]);
+    sg(resille, helices[1][Math.min(ih, NH)], anneau[9]);
+    // raidisseurs vers la charpente
+    if(k % 2 === 0) sg(resille, anneau[13], pied);
+  }
+  // Croisillons entre cerceaux successifs
+  for(let k = 0; k < cerceaux.length - 1; k++){
+    const a = cerceaux[k].anneau, b = cerceaux[k+1].anneau;
+    for(let i = 0; i < 18; i += 3){
+      sg(resille, a[i], b[(i+2) % 18]);
+      sg(resille, b[i], a[(i+2) % 18]);
+    }
   }
 
-  /* --- Couronnement : plateforme annulaire ouverte, et un disque
-         en lévitation au-dessus. Aucun sommet, aucune pointe. --- */
-  const yC = SOL + HAUT + .06;
-  const cInt = [], cExt = [];
-  for(let i = 0; i < 12; i++){
-    const t = i/12 * Math.PI*2;
-    cInt.push(pt(Math.cos(t)*.24, yC, Math.sin(t)*.24));
-    cExt.push(pt(Math.cos(t)*.62, yC, Math.sin(t)*.62));
-  }
-  for(let i = 0; i < 12; i++){
-    sg(porteur, cExt[i], cExt[(i+1)%12]);
-    sg(resille, cInt[i], cInt[(i+1)%12]);
-    sg(resille, cInt[i], cExt[i]);                 // rayons
-    sg(resille, cInt[i], cExt[(i+1)%12]);          // contreventement
-    if(i % 3 === 0) sg(resille, cExt[i], matHaut[(i/3) % 4]);
-  }
-  // Disque suspendu, détaché de la structure
-  const dInt = [], dExt = [];
-  for(let i = 0; i < 12; i++){
-    const t = i/12 * Math.PI*2;
-    dInt.push(pt(Math.cos(t)*.16, yC + .42, Math.sin(t)*.16));
-    dExt.push(pt(Math.cos(t)*.44, yC + .42, Math.sin(t)*.44));
-  }
-  for(let i = 0; i < 12; i++){
-    sg(dalles, dExt[i], dExt[(i+1)%12]);
-    sg(resille, dInt[i], dInt[(i+1)%12]);
-    sg(resille, dInt[i], dExt[i]);
-    if(i % 4 === 0) sg(cables, dInt[i], cInt[i]);  // trois haubans seulement
+  // Ancres accrochées à l'hélice, réparties sur la hauteur
+  const HAUTEURS = [.12, .28, .44, .60, .74, .88];
+  for(let i = 0; i < HAUTEURS.length; i++){
+    ancres.push({ idx: helices[i % 2][Math.round(HAUTEURS[i]*NH)],
+                  phase: alea()*6.28, n: i+1, h: HAUTEURS[i]*168 });
   }
 
-  /* --- Pilotis : le bâtiment ne touche pas le sol --- */
-  for(let i = 0; i < 4; i++){
-    const t = i/4 * Math.PI*2, r = .52;
-    sg(porteur, pt(Math.cos(t)*r, SOL - .28, Math.sin(t)*r), matBas[i]);
+  /* --- Volumes suspendus, décrits ici, tournés à chaque image ---
+     Chez Tatline : un cube pour le législatif, une rotation par an ;
+     un cône pour l'exécutif, une par mois ; un cylindre plus haut,
+     le plus rapide. On garde ce rapport de vitesses. --- */
+  const volumes = [
+    { forme:'cube',     t:.20, taille:.40, v:.00013 },
+    { forme:'cone',     t:.50, taille:.30, v:.00042 },
+    { forme:'cylindre', t:.76, taille:.20, v:.00110 }
+  ];
+  for(const v of volumes){
+    v.centre = pencher([0, SOL + v.t*HAUT, 0]);
+    v.axe = PENCHE;
+    // point d'accroche sur le cerceau le plus proche
+    const cc = cerceaux.reduce((m, c) =>
+      Math.abs(c.t - v.t) < Math.abs(m.t - v.t) ? c : m, cerceaux[0]);
+    v.accroches = [cc.anneau[0], cc.anneau[6], cc.anneau[12]];
   }
 
   /* --- Gnomon : les trois axes du relevé --- */
@@ -487,7 +423,9 @@ function holo(hote, graine){
       vec2 c = vUV - 0.5;
       // Décalage radial : nul au centre, croissant vers les bords,
       // exactement comme une aberration latérale d'objectif.
-      float r = uCA * dot(c, c);
+      // Un terme quadratique pour les bords, un terme linéaire pour
+      // que le décalage existe déjà à mi-champ.
+      float r = uCA * (dot(c, c) + 0.22 * length(c));
       float R = texture2D(uTex, vUV + c * r).r;
       float V = texture2D(uTex, vUV        ).g;
       float B = texture2D(uTex, vUV - c * r).b;
@@ -626,6 +564,56 @@ function holo(hote, graine){
         if(prec) S.push({ a:prec, b:p, w:.8, al:.34, fam:1 });
         prec = p;
       }
+    }
+
+    // Volumes suspendus, chacun tournant à sa propre vitesse
+    for(const v of volumes){
+      const ang = temps * v.v;
+      const c = Math.cos(v.axe), s2 = Math.sin(v.axe);
+      // repère local du volume : tourné sur lui-même, puis penché
+      const M = (x, y, z) => {
+        const ca = Math.cos(ang), sa = Math.sin(ang);
+        const X = x*ca - z*sa, Z = x*sa + z*ca;
+        return [X*c - y*s2 + v.centre[0], y*c + X*s2 + v.centre[1], Z + v.centre[2]];
+      };
+      const T = v.taille, arete = (a, b) => S.push({ a, b, w:1.2, al:.62, fam:0 });
+
+      if(v.forme === 'cube'){
+        const q = [];
+        for(const y of [-T/2, T/2])
+          for(const [x, z] of [[-T/2,-T/2],[T/2,-T/2],[T/2,T/2],[-T/2,T/2]])
+            q.push(M(x, y, z));
+        for(let i = 0; i < 4; i++){
+          arete(q[i], q[(i+1)%4]);
+          arete(q[4+i], q[4+(i+1)%4]);
+          arete(q[i], q[4+i]);
+        }
+      } else if(v.forme === 'cone'){
+        const sommet = M(0, T*.8, 0), base = [];
+        for(let i = 0; i < 14; i++){
+          const th = i/14*Math.PI*2;
+          base.push(M(Math.cos(th)*T*.62, -T*.55, Math.sin(th)*T*.62));
+        }
+        for(let i = 0; i < 14; i++){
+          arete(base[i], base[(i+1)%14]);
+          if(i % 2 === 0) arete(base[i], sommet);
+        }
+      } else {
+        const bas = [], hau = [];
+        for(let i = 0; i < 14; i++){
+          const th = i/14*Math.PI*2;
+          bas.push(M(Math.cos(th)*T*.62, -T*.7, Math.sin(th)*T*.62));
+          hau.push(M(Math.cos(th)*T*.62,  T*.7, Math.sin(th)*T*.62));
+        }
+        for(let i = 0; i < 14; i++){
+          arete(bas[i], bas[(i+1)%14]);
+          arete(hau[i], hau[(i+1)%14]);
+          if(i % 2 === 0) arete(bas[i], hau[i]);
+        }
+      }
+      // Suspension au cerceau voisin, en pointillés
+      for(const a of v.accroches)
+        S.push({ a: P[a], b: v.centre, w:.8, al:.20, fam:1 });
     }
 
     // Câbles, en pointillés qui défilent
@@ -830,7 +818,7 @@ function holo(hote, graine){
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texte);
     gl.uniform1i(UCA.tex, 0);
-    gl.uniform1f(UCA.ca, .030);
+    gl.uniform1f(UCA.ca, .095);
     gl.bindBuffer(gl.ARRAY_BUFFER, bufPlein);
     const ap = gl.getAttribLocation(progCA, 'aP');
     gl.enableVertexAttribArray(ap);
