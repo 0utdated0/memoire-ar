@@ -1,12 +1,13 @@
 /* ============================================================
-   Volume filaire holographique.
-   Canvas 2D, aucune bibliothèque, environ 4 ko.
+   Relevé d'un bâtiment non construit.
 
-   Le volume est engendré par une graine numérique : changez la
-   graine et vous obtenez un autre bâtiment. Une graine par
-   projet suffit à donner une identité propre à chaque page.
+   Technique : tout est dessiné trois fois, en rouge pur, vert
+   pur et bleu pur, légèrement décalés, en composition additive.
+   Là où les trois passes se superposent, le trait redevient
+   blanc ; sur les bords, les canaux se séparent et frangent.
+   C'est une aberration chromatique réelle, pas un dégradé.
 
-   Usage :  holo(document.querySelector('#scene'), 1789);
+   Canvas 2D, aucune bibliothèque.
    ============================================================ */
 
 function holo(hote, graine){
@@ -16,7 +17,6 @@ function holo(hote, graine){
   const ctx = cv.getContext('2d');
   hote.appendChild(cv);
 
-  /* Générateur déterministe : même graine, même bâtiment. */
   let etat = graine >>> 0;
   const alea = () => {
     etat ^= etat << 13; etat >>>= 0;
@@ -25,120 +25,171 @@ function holo(hote, graine){
     return etat / 4294967296;
   };
 
-  /* ---- Construction du volume ---- */
-  const sommets = [], aretes = [];
+  /* ---------- Volume ---------- */
+  const S = [], A = [], niveaux = [];
   const boite = (cx, cz, l, p, y0, y1) => {
-    const d = sommets.length;
-    const xs = [cx - l, cx + l], zs = [cz - p, cz + p];
+    const d = S.length;
     for(const y of [y0, y1])
-      for(const x of xs)
-        for(const z of zs) sommets.push([x, y, z]);
-    // 0-1-3-2 en bas, 4-5-7-6 en haut, puis les montants
+      for(const x of [cx - l, cx + l])
+        for(const z of [cz - p, cz + p]) S.push([x, y, z]);
     [[0,1],[1,3],[3,2],[2,0],[4,5],[5,7],[7,6],[6,4],
-     [0,4],[1,5],[2,6],[3,7]].forEach(a => aretes.push([d+a[0], d+a[1]]));
+     [0,4],[1,5],[2,6],[3,7]].forEach(a => A.push([d+a[0], d+a[1]]));
   };
 
-  let y = -1.15;
+  let y = -1.1;
   const etages = 7 + Math.floor(alea() * 3);
   for(let i = 0; i < etages; i++){
-    const h  = .30 + alea() * .30;
-    const l  = .60 - i * .048 + alea() * .13;
-    const p  = .46 - i * .028 + alea() * .11;
-    const cx = (alea() - .5) * .42;
-    const cz = (alea() - .5) * .34;
-    boite(cx, cz, Math.max(l, .15), Math.max(p, .12), y, y + h);
+    const h = .26 + alea() * .26;
+    boite((alea()-.5)*.40, (alea()-.5)*.32,
+          Math.max(.56 - i*.045 + alea()*.12, .14),
+          Math.max(.43 - i*.026 + alea()*.10, .11), y, y + h);
+    niveaux.push(S.length - 5);
     y += h + .05;
   }
+  boite(.88, .09, .48, .16, y - .90, y - .60);   // porte-à-faux
+  niveaux.push(S.length - 6);
 
-  /* Un porte-à-faux, la signature des architectures spéculatives */
-  boite(.92, .10, .52, .17, y - .95, y - .64);
+  /* ---------- Anneaux de relevé, gradués ---------- */
+  const anneaux = [];
+  const cerc = (r, axe, incl, ticks) => {
+    const pts = [], n = 120;
+    for(let i = 0; i < n; i++){
+      const t = (i / n) * Math.PI * 2;
+      let p = [Math.cos(t) * r, 0, Math.sin(t) * r];
+      const c = Math.cos(incl), s = Math.sin(incl);
+      p = axe === 'x' ? [p[0], p[1]*c - p[2]*s, p[1]*s + p[2]*c]
+                      : [p[0]*c - p[1]*s, p[0]*s + p[1]*c, p[2]];
+      pts.push(p);
+    }
+    anneaux.push({ pts, ticks });
+  };
+  cerc(1.72, 'x', .16, 72);
+  cerc(1.34, 'z', 1.24, 0);
+  cerc(2.05, 'x', 1.42, 36);
 
-  /* Sol : trame ouverte, dessinée à part pour rester en retrait */
-  const solS = [], solA = [];
-  const G = 2.0, N = 7;
-  for(let i = 0; i <= N; i++){
-    const t = -G + (2 * G * i) / N;
-    const d = solS.length;
-    solS.push([t, -1.2, -G], [t, -1.2, G], [-G, -1.2, t], [G, -1.2, t]);
-    solA.push([d, d + 1], [d + 2, d + 3]);
-  }
+  /* ---------- Relevés attachés au volume ---------- */
+  const releves = niveaux.slice(0, 6).map((idx, i) => ({
+    idx,
+    txt: `N${String(i+1).padStart(2,'0')} · H ${(4.2 + i*3.4).toFixed(1)} · ANCRÉ`
+  }));
 
-  /* ---- Projection ---- */
-  let L = 0, H = 0, dpr = 1;
+  /* ---------- Projection ---------- */
+  let L = 0, H = 0;
   const redim = () => {
-    dpr = Math.min(devicePixelRatio || 1, 2);
+    const dpr = Math.min(devicePixelRatio || 1, 2);
     L = hote.clientWidth; H = hote.clientHeight;
     cv.width = L * dpr; cv.height = H * dpr;
     cv.style.width = L + 'px'; cv.style.height = H + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
 
-  const TILT = .40, DIST = 4.6, FOV = 3.2;
-  const projete = (p, a) => {
+  const proj = (p, a) => {
     const ca = Math.cos(a), sa = Math.sin(a);
-    const x  = p[0] * ca - p[2] * sa;
-    const z  = p[0] * sa + p[2] * ca;
-    const cb = Math.cos(TILT), sb = Math.sin(TILT);
-    const yy = p[1] * cb - z * sb;
-    const zz = p[1] * sb + z * cb;
-    const f  = FOV / (FOV + zz + DIST);
-    const e  = Math.min(L, H) * .52;
-    return [L / 2 + x * f * e, H / 2 - yy * f * e + H * .10];
+    const x = p[0]*ca - p[2]*sa, z = p[0]*sa + p[2]*ca;
+    const cb = Math.cos(.34), sb = Math.sin(.34);
+    const yy = p[1]*cb - z*sb, zz = p[1]*sb + z*cb;
+    const f = 3.4 / (3.4 + zz + 5.0);
+    const e = Math.min(L, H) * .46;
+    return [L/2 + x*f*e, H/2 - yy*f*e + H*.06];
   };
 
-  /* ---- Rendu ---- */
-  const passes = [
-    { dx:-1.15, dy: .5, col:'rgba(100,233,255,.62)' },  // cyan
-    { dx: 1.15, dy:-.5, col:'rgba(255,143,200,.50)' },  // rose
-    { dx: 0,    dy: 0,  col:'rgba(226,236,255,.80)' }   // arête nette
+  /* ---------- Rendu ---------- */
+  // Aberration latérale : chaque canal est dilaté depuis le centre
+  // de l'image. Au centre les trois se superposent et le trait est
+  // blanc ; plus on s'éloigne, plus ils se séparent et frangent.
+  const CANAUX = [
+    { k: 1.0042, c:'rgb(255,55,55)' },
+    { k: 1.0000, c:'rgb(55,255,105)' },
+    { k: 0.9958, c:'rgb(70,110,255)' }
   ];
 
   const lent = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let angle = .62, brut = 0, vivant = true;
+  let angle = .70, vivant = true;
 
-  const trace = () => {
-    ctx.clearRect(0, 0, L, H);
-    const pts = sommets.map(s => projete(s, angle));
-    const pSol = solS.map(s => projete(s, angle));
+  const geometrie = (k) => {
+    // dilate un point depuis le centre de l'image
+    const ab = q => [L/2 + (q[0] - L/2) * k, H/2 + (q[1] - H/2) * k];
+    const pts = S.map(s => ab(proj(s, angle)));
 
-    // Ligne de balayage, remontant lentement le volume
-    const scan = H * (1 - ((brut * .00022) % 1)) ;
-
-    // Le sol reste en retrait : c'est le bâtiment qu'on regarde
-    ctx.strokeStyle = 'rgba(140,160,215,.20)';
-    ctx.lineWidth = .5;
+    // Trame de sol, très en retrait
+    ctx.globalAlpha = .12;
     ctx.beginPath();
-    for(const [a, b] of solA){
-      ctx.moveTo(pSol[a][0], pSol[a][1]);
-      ctx.lineTo(pSol[b][0], pSol[b][1]);
+    const G = 2.4, N = 8;
+    for(let i = 0; i <= N; i++){
+      const t = -G + (2*G*i)/N;
+      const a1 = ab(proj([t,-1.15,-G], angle)), a2 = ab(proj([t,-1.15,G], angle));
+      const b1 = ab(proj([-G,-1.15,t], angle)), b2 = ab(proj([G,-1.15,t], angle));
+      ctx.moveTo(a1[0], a1[1]); ctx.lineTo(a2[0], a2[1]);
+      ctx.moveTo(b1[0], b1[1]); ctx.lineTo(b2[0], b2[1]);
     }
     ctx.stroke();
 
-    for(const pa of passes){
-      ctx.strokeStyle = pa.col;
-      ctx.lineWidth = pa.dx === 0 ? .95 : .65;
+    // Anneaux et graduations
+    ctx.globalAlpha = .30;
+    for(const an of anneaux){
       ctx.beginPath();
-      for(const [a, b] of aretes){
-        ctx.moveTo(pts[a][0] + pa.dx, pts[a][1] + pa.dy);
-        ctx.lineTo(pts[b][0] + pa.dx, pts[b][1] + pa.dy);
-      }
+      an.pts.forEach((p, i) => {
+        const q = ab(proj(p, angle));
+        i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]);
+      });
+      ctx.closePath();
       ctx.stroke();
+
+      if(an.ticks){
+        ctx.beginPath();
+        const pas = Math.max(1, Math.floor(an.pts.length / an.ticks));
+        for(let i = 0; i < an.pts.length; i += pas){
+          const p  = an.pts[i];
+          const q  = ab(proj(p, angle));
+          const q2 = ab(proj([p[0]*1.05, p[1]*1.05, p[2]*1.05], angle));
+          ctx.moveTo(q[0], q[1]); ctx.lineTo(q2[0], q2[1]);
+        }
+        ctx.stroke();
+      }
     }
 
-    if(!lent){
-      const g = ctx.createLinearGradient(0, scan - 90, 0, scan + 90);
-      g.addColorStop(0,  'rgba(167,139,250,0)');
-      g.addColorStop(.5, 'rgba(167,139,250,.13)');
-      g.addColorStop(1,  'rgba(167,139,250,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, scan - 90, L, 180);
+    // Volume
+    ctx.globalAlpha = .58;
+    ctx.beginPath();
+    for(const [a, b] of A){
+      ctx.moveTo(pts[a][0], pts[a][1]);
+      ctx.lineTo(pts[b][0], pts[b][1]);
+    }
+    ctx.stroke();
+
+    // Réticules et relevés
+    ctx.globalAlpha = .46;
+    ctx.font = '9px "JetBrains Mono", ui-monospace, monospace';
+    for(const r of releves){
+      const q = pts[r.idx];
+      if(!q) continue;
+      const x = q[0], yy = q[1], s = 7;
+      ctx.beginPath();
+      ctx.moveTo(x-s, yy-s+3); ctx.lineTo(x-s, yy-s); ctx.lineTo(x-s+3, yy-s);
+      ctx.moveTo(x+s-3, yy-s); ctx.lineTo(x+s, yy-s); ctx.lineTo(x+s, yy-s+3);
+      ctx.moveTo(x-s, yy+s-3); ctx.lineTo(x-s, yy+s); ctx.lineTo(x-s+3, yy+s);
+      ctx.moveTo(x+s-3, yy+s); ctx.lineTo(x+s, yy+s); ctx.lineTo(x+s, yy+s-3);
+      ctx.stroke();
+      ctx.fillText(r.txt, x + 13, yy - 9);
+    }
+    ctx.globalAlpha = 1;
+  };
+
+  const trace = () => {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.clearRect(0, 0, L, H);
+    ctx.globalCompositeOperation = 'lighter';   // les canaux s'additionnent
+    ctx.lineWidth = .8;
+    for(const k of CANAUX){
+      ctx.strokeStyle = k.c;
+      ctx.fillStyle   = k.c;
+      geometrie(k.k);
     }
   };
 
-  const boucle = (t) => {
+  const boucle = () => {
     if(!vivant) return;
-    brut = t;
-    angle += lent ? 0 : .0016;
+    if(!lent) angle += .0011;
     trace();
     requestAnimationFrame(boucle);
   };

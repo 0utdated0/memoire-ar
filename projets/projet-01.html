@@ -3,17 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#05060E">
-<title>01 — Cube de test</title>
+<meta name="theme-color" content="#000000">
+<title>01 / Cube de test</title>
 
-<!-- =========================================================
-     GABARIT À DUPLIQUER POUR CHAQUE PROJET.
-     Cherchez les commentaires « À RENSEIGNER ».
-     ========================================================= -->
+<!-- GABARIT À DUPLIQUER. Cherchez « À RENSEIGNER ». -->
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Instrument+Sans:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/holo.css">
 
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -22,76 +19,62 @@
 
 <style>
   html,body{height:100%;overflow:hidden}
-
-  #accueil{
-    position:fixed;inset:0;z-index:30;
-    display:flex;flex-direction:column;
-    padding:var(--marge);
-    background:var(--vide);
-  }
-  #accueil .scene{flex:1;max-height:none;margin:12px 0 4px}
-  #accueil h1{font-size:clamp(2.2rem,9vw,3.4rem)}
+  #accueil{position:fixed;inset:0;z-index:10}
 
   #etat{
-    position:fixed;left:0;right:0;bottom:0;z-index:20;
-    padding:16px 20px calc(16px + env(safe-area-inset-bottom));
-    background:rgba(5,6,14,.82);
-    backdrop-filter:blur(14px);
+    position:fixed;left:0;right:0;bottom:0;z-index:20;display:none;
+    padding:15px 20px calc(15px + env(safe-area-inset-bottom));
+    background:rgba(0,0,0,.78);backdrop-filter:blur(12px);
     border-top:1px solid var(--trait);
-    text-align:center;font-size:.86rem;color:var(--encre);
-    display:none;
+    text-align:center;font-size:11px;letter-spacing:.06em;color:var(--lisible);
   }
   #etat.visible{display:block}
-  #etat b{
-    font-family:"Syne",sans-serif;font-weight:600;
-    background:linear-gradient(101deg,var(--holo-cyan),var(--holo-rose));
-    -webkit-background-clip:text;background-clip:text;color:transparent;
-  }
+  #etat b{color:var(--vif);font-weight:400}
 
-  #quitter{
-    position:fixed;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:20;
-    display:none;cursor:pointer;
-    background:rgba(5,6,14,.82);backdrop-filter:blur(14px);
-    border:1px solid var(--trait);border-radius:2px;
-    color:var(--encre);font-family:"Instrument Sans",sans-serif;font-size:.86rem;
-    padding:11px 16px;
+  #quitter,#retour{
+    position:fixed;top:calc(12px + env(safe-area-inset-top));z-index:26;
+    cursor:pointer;font-family:inherit;font-size:11px;letter-spacing:.05em;
+    background:rgba(0,0,0,.78);backdrop-filter:blur(12px);
+    border:1px solid var(--trait);border-radius:1px;
+    color:var(--lisible);padding:10px 15px;
   }
+  #quitter{right:12px;display:none}
   #quitter.visible{display:block}
+  #retour{left:12px}
 
-  #repli{position:fixed;inset:0;z-index:25;background:var(--vide);display:none}
+  #repli{position:fixed;inset:0;z-index:25;background:#000;display:none}
   #repli.visible{display:block}
   model-viewer{width:100%;height:100%;--poster-color:transparent}
-  #retour{
-    position:fixed;top:calc(14px + env(safe-area-inset-top));left:14px;z-index:26;
-    cursor:pointer;background:rgba(5,6,14,.82);backdrop-filter:blur(14px);
-    border:1px solid var(--trait);border-radius:2px;
-    color:var(--encre);font-family:"Instrument Sans",sans-serif;font-size:.86rem;
-    padding:11px 16px;
-  }
 </style>
 </head>
 <body>
 
 <!-- ================= ACCUEIL ================= -->
 <section id="accueil">
-  <div class="bandeau">
-    <a href="../index.html">Retour à l'archive</a>
-    <span class="rang">01</span>
-  </div>
-
   <div class="scene" id="scene" aria-hidden="true"></div>
+  <div class="cadre" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 
-  <!-- À RENSEIGNER : titre et consigne -->
-  <h1>Cube de test</h1>
-  <p class="dit" style="margin:16px 0 26px">
-    Autorisez la caméra, puis pointez à nouveau la vignette imprimée.
-    Gardez-la dans le cadre, le bâtiment y reste accroché.
-  </p>
-
-  <div>
-    <button class="action" id="lancer">Lever le bâtiment</button>
-    <a class="discret" href="#" id="vers-repli">Le poser dans la pièce à l'échelle réelle</a>
+  <div class="releve g" aria-hidden="true">
+    PRJ 01<br>REL 4.62.11<br>NIV 08 / 08<br>ÉTAT NON BÂTI
   </div>
+
+  <main class="hud">
+    <div class="entete">
+      <a href="../index.html">← Archive</a>
+      <span class="meta">01</span>
+    </div>
+
+    <div class="pied">
+      <!-- À RENSEIGNER : titre et consigne -->
+      <p class="enonce">
+        <b>Cube de test.</b><br>
+        Autorisez la caméra, puis pointez à nouveau la vignette imprimée.
+        Gardez-la dans le cadre : le bâtiment y reste accroché.
+      </p>
+      <button class="action" id="lancer">Lever le bâtiment</button>
+      <a class="discret" href="#" id="vers-repli">Le poser dans la pièce à l'échelle réelle</a>
+    </div>
+  </main>
 </section>
 
 <!-- ================= AR ANCRÉE SUR LA VIGNETTE ================= -->
@@ -110,21 +93,10 @@
   <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
   <a-entity id="cible" mindar-image-target="targetIndex: 0">
-    <!--
-      Repère de la vignette : X vers la droite, Y vers le haut, Z sort du papier.
-      Le glTF est en Y-up, d'où la rotation +90 sur X pour le dresser.
-      Si le bâtiment part derrière la page, passez à -90.
-
-      scale = hauteur voulue (cm) ÷ largeur vignette (cm) ÷ hauteur du modèle
-      position reste à 0 si l'origine du modèle est au sol.
-    -->
-    <a-gltf-model
-      src="#batiment"
-      rotation="90 0 0"
-      position="0 0 0"
-      scale="0.6 0.6 0.6">
-    </a-gltf-model>
-
+    <!-- rotation 90 dresse le modèle hors de la page ; -90 s'il part derrière.
+         scale = hauteur voulue (cm) ÷ largeur vignette (cm) ÷ hauteur du modèle
+         position reste à 0 si l'origine du modèle est au sol. -->
+    <a-gltf-model src="#batiment" rotation="90 0 0" position="0 0 0" scale="0.6 0.6 0.6"></a-gltf-model>
     <a-light type="ambient" intensity="0.85"></a-light>
     <a-light type="directional" intensity="0.75" position="1 2 1"></a-light>
   </a-entity>
@@ -135,16 +107,10 @@
 
 <!-- ================= REPLI : POSE LIBRE ================= -->
 <div id="repli">
-  <button id="retour">Retour</button>
-  <model-viewer
-    src="../modeles/projet-01.glb"
-    ar
-    ar-modes="webxr scene-viewer quick-look"
-    ar-scale="fixed"
-    camera-controls
-    shadow-intensity="1"
-    alt="Maquette du premier projet">
-  </model-viewer>
+  <button id="retour">← Retour</button>
+  <model-viewer src="../modeles/projet-01.glb" ar
+    ar-modes="webxr scene-viewer quick-look" ar-scale="fixed"
+    camera-controls shadow-intensity="1" alt="Maquette du premier projet"></model-viewer>
 </div>
 
 <script src="../assets/holo.js"></script>
@@ -172,14 +138,14 @@
     }
   });
 
-  cible.addEventListener('targetFound', () => { etat.innerHTML = '<b>Ancré</b>'; });
+  cible.addEventListener('targetFound', () => { etat.innerHTML = '<b>ANCRÉ</b>'; });
   cible.addEventListener('targetLost',  () => { etat.textContent = 'Pointez la vignette'; });
 
   quitter.addEventListener('click', () => {
     scene.systems['mindar-image-system'].stop();
     etat.classList.remove('visible');
     quitter.classList.remove('visible');
-    accueil.style.display = 'flex';
+    accueil.style.display = 'block';
     filaire.reprend();
   });
 
