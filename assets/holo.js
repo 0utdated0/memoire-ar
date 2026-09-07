@@ -283,6 +283,10 @@ function holo(hote, graine){
     arcs.push({ pts, ph: alea()*6.28, v: .0004 + alea()*.0009 });
   }
 
+  /* Quels sommets appartiennent au bâtiment et non au décor.
+     C'est sur eux, et eux seuls, que se règle la mise au point. */
+  const estBati = P.map(p => Math.hypot(p[0], p[2]) < 1.35);
+
   /* =========================================================
      PROJECTION
      ========================================================= */
@@ -346,6 +350,19 @@ function holo(hote, graine){
   // Le flou coûte cher : on l'écarte sur petit écran.
   const flouActif = () => L > 760 && !lent;
 
+  // Safari n'a longtemps pas pris en charge ctx.filter. On teste, et
+  // si c'est absent on émule le flou par passes décalées.
+  let filtreOK = false;
+  try {
+    const t = document.createElement('canvas').getContext('2d');
+    t.filter = 'blur(2px)';
+    filtreOK = (t.filter === 'blur(2px)');
+  } catch(e){ filtreOK = false; }
+
+  // Le rayon de ctx.filter s'exprime en pixels physiques : sur un
+  // écran Retina il faut le doubler pour obtenir l'effet voulu.
+  const DPR = Math.min(devicePixelRatio || 1, 2);
+
   const trace = () => {
     ctx.globalCompositeOperation = 'source-over';
     ctx.filter = 'none';
@@ -371,23 +388,35 @@ function holo(hote, graine){
     // volume ; le flou croît de part et d'autre. L'épaisseur et
     // l'opacité sont compensées, sinon le trait ne devient pas flou,
     // il s'évapore.
+    // Mise au point réglée sur le BÂTIMENT seul. Se baser sur toute
+    // la scène était l'erreur : la trame de sol, bien plus étendue,
+    // écrasait l'échelle et le bâtiment restait entièrement net.
+    let bMin = 1e9, bMax = -1e9;
+    for(let i = 0; i < pts.length; i++){
+      if(!estBati[i]) continue;
+      if(pts[i][2] < bMin) bMin = pts[i][2];
+      if(pts[i][2] > bMax) bMax = pts[i][2];
+    }
+    const zMid = (bMin + bMax) / 2;
+    const demi = Math.max(.35, (bMax - bMin) / 2);
+
     let zMin = 1e9, zMax = -1e9;
     for(const q of pts){ if(q[2] < zMin) zMin = q[2]; if(q[2] > zMax) zMax = q[2]; }
-    const zMid = (zMin + zMax) / 2, demi = Math.max(.001, (zMax - zMin) / 2);
 
     const bandes = [];
     if(flouActif()){
-      const NB = 5;
+      const NB = 7;
       for(let i = 0; i < NB; i++){
         const a = zMin + (zMax - zMin) * i / NB;
         const b = zMin + (zMax - zMin) * (i+1) / NB;
-        const d = Math.abs(((a+b)/2 - zMid) / demi);   // 0 au net, 1 aux extrêmes
-        const r = 2.8 * d * d;                          // rayon de flou
-        bandes.push({ min:a, max:(i===NB-1 ? 1e9 : b),
-                      blur: r < .25 ? 'none' : `blur(${r.toFixed(2)}px)`,
-                      ep: 1 + r * .95, op: 1 + r * .75 });
+        // distance au plan de netteté, en demi-profondeurs de bâtiment
+        const d = Math.min(2, Math.abs(((a+b)/2 - zMid) / demi));
+        const r = Math.min(6, 4.4 * d * d);
+        bandes.push({ min:(i===0 ? -1e9 : a), max:(i===NB-1 ? 1e9 : b), r,
+                      blur: r < .3 ? 'none' : `blur(${(r*DPR).toFixed(2)}px)`,
+                      ep: 1 + r * .55, op: 1 + r * .40 });
       }
-    } else bandes.push({ min:-1e9, max:1e9, blur:'none', ep:1, op:1 });
+    } else bandes.push({ min:-1e9, max:1e9, r:0, blur:'none', ep:1, op:1 });
 
     const dansBande = (a,b,bd) => {
       const z = (pts[a][2] + pts[b][2]) / 2;
@@ -395,17 +424,41 @@ function holo(hote, graine){
     };
 
     const lot = (couche, alpha, lw, bd, dash) => {
-      ctx.globalAlpha = Math.min(1, alpha * (bd.op || 1));
-      ctx.lineWidth = lw * (bd.ep || 1);
+      const seg = [];
+      for(const [a,b] of couche) if(dansBande(a,b,bd)) seg.push([a,b]);
+      if(!seg.length) return;
+
+      const al = Math.min(1, alpha * (bd.op || 1));
+      const w  = lw * (bd.ep || 1);
       if(dash){ ctx.setLineDash(dash); ctx.lineDashOffset = -temps * .02; }
       else ctx.setLineDash([]);
-      ctx.beginPath();
-      for(const [a,b] of couche){
-        if(!dansBande(a,b,bd)) continue;
-        ctx.moveTo(pts[a][0], pts[a][1]);
-        ctx.lineTo(pts[b][0], pts[b][1]);
+
+      const chemin = (ox, oy) => {
+        ctx.beginPath();
+        for(const [a,b] of seg){
+          ctx.moveTo(pts[a][0]+ox, pts[a][1]+oy);
+          ctx.lineTo(pts[b][0]+ox, pts[b][1]+oy);
+        }
+        ctx.stroke();
+      };
+
+      if(bd.r > .3 && !filtreOK){
+        // Émulation : sept passes réparties en cercle. Sans ctx.filter
+        // c'est la seule façon d'obtenir un étalement du trait.
+        const N = 7;
+        ctx.lineWidth = w;
+        ctx.globalAlpha = Math.min(1, al * 1.5 / N);
+        for(let i = 0; i < N; i++){
+          const th = i/N * Math.PI*2;
+          chemin(Math.cos(th)*bd.r, Math.sin(th)*bd.r);
+        }
+        ctx.globalAlpha = Math.min(1, al * .5);
+        chemin(0, 0);
+      } else {
+        ctx.globalAlpha = al;
+        ctx.lineWidth = w;
+        chemin(0, 0);
       }
-      ctx.stroke();
       ctx.setLineDash([]);
     };
 
