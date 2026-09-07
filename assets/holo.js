@@ -40,216 +40,279 @@ function holo(hote, graine){
   const quad = (c,a,b,d,e) => { sg(c,a,b); sg(c,b,d); sg(c,d,e); sg(c,e,a); };
 
   /* ---------------------------------------------------------
-     Tour-machine à deux lames.
+     Tour-machine à deux lames, relevée sur la référence.
 
-     Vocabulaire relevé : deux lames verticales à angles coupés,
-     séparées par un canyon qui laisse voir la machinerie ; un
-     exosquelette de cadres épais ; des néons continus le long des
-     arêtes ; un socle en terrasses avec escalators et pavillons.
-     Tout est anguleux, rien n'est courbe.
+     Gestes principaux :
+       - la tour se pince au sol et surplombe : elle est plus large
+         en haut qu'en bas
+       - chaque lame est un hexagone allongé DÉCOUPÉ EN ÉLÉVATION,
+         pas un prisme à plan constant
+       - les néons épousent le contour des découpes
+       - un grand portail encadré, et un anneau hexagonal lumineux
+       - escalators obliques traversant la façade, socle en dalles
+         débordantes, pavillon bas détaché
      --------------------------------------------------------- */
   const SOL = -1.15;
   const lumieres = [], neons = [];
 
-  // Plan octogonal : un rectangle dont les quatre angles sont coupés.
-  const octo = (cx, cz, lx, lz, ch) => [
-    [cx-lx+ch, cz-lz], [cx+lx-ch, cz-lz], [cx+lx, cz-lz+ch], [cx+lx, cz+lz-ch],
-    [cx+lx-ch, cz+lz], [cx-lx+ch, cz+lz], [cx-lx, cz+lz-ch], [cx-lx, cz-lz+ch]
-  ];
-  const contour = (pl, y) => pl.map(([x,z]) => pt(x, y, z));
-  const fermer = (idx, couche) => {
-    for(let i = 0; i < idx.length; i++) sg(couche, idx[i], idx[(i+1)%idx.length]);
+  const YB = SOL + .30, YT = SOL + 2.86;
+
+  // Profil d'une lame, vu de face : étroit en pied, il s'ouvre à 42 %
+  // de la hauteur, puis se termine par de grands angles coupés.
+  const profilLame = (lz, pin, ch) => {
+    const yE = YB + (YT - YB) * .42;
+    return [
+      [-lz*pin,        YB + ch*.55],
+      [-lz*pin + ch*.4, YB],
+      [ lz*pin - ch*.4, YB],
+      [ lz*pin,        YB + ch*.55],
+      [ lz,            yE],
+      [ lz,            YT - ch*1.5],
+      [ lz - ch,       YT],
+      [-lz + ch*1.7,   YT],
+      [-lz,            YT - ch*2.2],
+      [-lz,            yE + ch]
+    ];
   };
-  const boite = (cx, cy, cz, lx, ly, lz, couche) => {
+
+  const traceFace = (prof, x, couche) => {
+    const idx = prof.map(([z, y]) => pt(x, y, z));
+    for(let k = 0; k < idx.length; k++) sg(couche, idx[k], idx[(k+1)%idx.length]);
+    return idx;
+  };
+  const fermer = (idx, couche) => {
+    for(let k = 0; k < idx.length; k++) sg(couche, idx[k], idx[(k+1)%idx.length]);
+  };
+  const boite = (cx, cy, cz, lx, ly, lz2, couche) => {
     const b = [], h = [];
-    for(const [sx,sz] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
-      b.push(pt(cx+sx*lx, cy-ly, cz+sz*lz));
-      h.push(pt(cx+sx*lx, cy+ly, cz+sz*lz));
+    for(const [sx, sz] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
+      b.push(pt(cx+sx*lx, cy-ly, cz+sz*lz2));
+      h.push(pt(cx+sx*lx, cy+ly, cz+sz*lz2));
     }
     fermer(b, couche); fermer(h, couche);
-    for(let i = 0; i < 4; i++) sg(couche, b[i], h[i]);
+    for(let k = 0; k < 4; k++) sg(couche, b[k], h[k]);
     return { b, h };
+  };
+  // Interpole un point sur le contour, pour y accrocher les planchers
+  const surProfil = (prof, y) => {
+    const out = [];
+    for(let k = 0; k < prof.length; k++){
+      const a = prof[k], b = prof[(k+1)%prof.length];
+      if((a[1] - y) * (b[1] - y) > 0) continue;
+      const t = Math.abs(b[1]-a[1]) < 1e-6 ? 0 : (y - a[1]) / (b[1] - a[1]);
+      out.push(a[0] + (b[0]-a[0])*t);
+    }
+    return out.sort((p, q) => p - q);
   };
 
   /* ================= LES DEUX LAMES ================= */
-  const HB = SOL + .34, NN = 34, PAS = .066;
-  const lames = [
-    { cx:-.345, cz:-.02, lx:.185, lz:.25, ch:.075, n:NN,     nom:'A' },
-    { cx: .345, cz: .05, lx:.165, lz:.22, ch:.065, n:NN-4,   nom:'B' }
+  const LAMES = [
+    { x0:-.40, x1:-.235, lz:.40, pin:.34, ch:.19, portail:false },
+    { x0: .155, x1: .40, lz:.35, pin:.30, ch:.17, portail:true  }
   ];
+  const PASE = .062;
 
-  for(const L of lames){
-    const pl = octo(L.cx, L.cz, L.lx, L.lz, L.ch);
-    const niv = [];
-    for(let i = 0; i <= L.n; i++) niv.push(contour(pl, HB + i*PAS));
-    L.niv = niv;
+  for(const L of LAMES){
+    L.prof = profilLame(L.lz, L.pin, L.ch);
+    const f0 = traceFace(L.prof, L.x0, porteur);
+    const f1 = traceFace(L.prof, L.x1, porteur);
+    for(let k = 0; k < f0.length; k++) sg(porteur, f0[k], f1[k]);
 
-    // Planchers : trait marqué à chaque niveau
-    for(const n of niv) fermer(n, dalles);
-    // Montants d'angle continus
-    for(let k = 0; k < 8; k++)
-      for(let i = 0; i < L.n; i++) sg(porteur, niv[i][k], niv[i+1][k]);
+    // Le néon épouse le contour découpé : c'est le geste de la référence
+    neons.push(f0.concat([f0[0]]).map(k => P[k]));
+    neons.push(f1.concat([f1[0]]).map(k => P[k]));
 
-    // Trumeaux : subdivision fine de chaque façade
-    for(let i = 0; i < L.n; i++)
-      for(let k = 0; k < 8; k++){
-        const A = P[niv[i][k]], B = P[niv[i][(k+1)%8]];
-        for(let w = 1; w < 3; w++){
-          const t = w/3;
-          sg(resille, pt(A[0]+(B[0]-A[0])*t, P[niv[i][k]][1],   A[2]+(B[2]-A[2])*t),
-                      pt(A[0]+(B[0]-A[0])*t, P[niv[i+1][k]][1], A[2]+(B[2]-A[2])*t));
-        }
-      }
-
-    // Exosquelette : cadre épais tous les cinq niveaux, en saillie
-    for(let i = 0; i <= L.n - 5; i += 5){
-      const dep = .038;
-      const ext = octo(L.cx, L.cz, L.lx+dep, L.lz+dep, L.ch+dep*.6);
-      const c0 = contour(ext, HB + i*PAS - .012);
-      const c1 = contour(ext, HB + (i+5)*PAS + .012);
-      fermer(c0, porteur); fermer(c1, porteur);
-      for(let k = 0; k < 8; k++){
-        sg(porteur, c0[k], c1[k]);
-        sg(resille, c0[k], niv[i][k]);
-        sg(resille, c1[k], niv[Math.min(i+5, L.n)][k]);
-      }
-      // néon horizontal sur la corniche du cadre
-      neons.push(c1.concat([c1[0]]).map(k2 => P[k2]));
-    }
-
-    // Néons verticaux sur deux arêtes coupées
-    for(const k of [2, 6]){
-      const fil = [];
-      for(let i = 0; i <= L.n; i++) fil.push(P[niv[i][k]]);
-      neons.push(fil);
-    }
-
-    // Greebles : panneaux, caissons et bouches d'aération
-    for(let i = 2; i < L.n - 1; i++){
-      if((i*7 + (L.nom === 'A' ? 0 : 3)) % 4) continue;
-      for(const k of [0, 3, 4, 7]){
-        if(((i + k) * 5) % 3) continue;
-        const A = P[niv[i][k]], B = P[niv[i][(k+1)%8]];
-        const t = .28 + ((i*k) % 4) * .12;
-        const cx2 = A[0]+(B[0]-A[0])*t, cz2 = A[2]+(B[2]-A[2])*t;
-        const nx = (B[2]-A[2]), nz = -(B[0]-A[0]);
-        const ln = Math.hypot(nx, nz) || 1;
-        boite(cx2 + nx/ln*.018, P[niv[i][k]][1] + PAS*.5, cz2 + nz/ln*.018,
-              .026, PAS*.34, .026, resille);
-        if((i*3 + k) % 5 === 0)
-          lumieres.push([cx2 + nx/ln*.03, P[niv[i][k]][1] + PAS*.5, cz2 + nz/ln*.03]);
+    // Planchers : ils s'arrêtent sur le contour, donc leur longueur
+    // suit l'évasement de la lame.
+    L.planchers = [];
+    for(let y = YB + PASE; y < YT; y += PASE){
+      const bornes = surProfil(L.prof, y);
+      if(bornes.length < 2) continue;
+      const [za, zb] = [bornes[0], bornes[bornes.length-1]];
+      const q = [ pt(L.x0, y, za), pt(L.x1, y, za), pt(L.x1, y, zb), pt(L.x0, y, zb) ];
+      sg(dalles, q[0], q[3]); sg(dalles, q[1], q[2]);
+      sg(resille, q[0], q[1]); sg(resille, q[3], q[2]);
+      L.planchers.push({ y, za, zb });
+      // trumeaux verticaux sur la face externe
+      const nb = Math.max(3, Math.round((zb - za) / .075));
+      for(let w = 1; w < nb; w++){
+        const z = za + (zb - za) * w/nb;
+        sg(resille, pt(L.x0, y, z), pt(L.x0, y + PASE, z));
+        if((w * 7 + Math.round(y*90)) % 11 === 0)
+          lumieres.push([L.x0 - .012, y + PASE*.5, z]);
       }
     }
+
+    // Nervures en saillie, tous les quatre planchers
+    for(let i = 0; i < L.planchers.length; i += 4){
+      const p = L.planchers[i], d = .028;
+      const c = [ pt(L.x0-d, p.y, p.za), pt(L.x1+d, p.y, p.za),
+                  pt(L.x1+d, p.y, p.zb), pt(L.x0-d, p.y, p.zb) ];
+      fermer(c, porteur);
+      neons.push(c.concat([c[0]]).map(k => P[k]));
+    }
+  }
+
+  /* ---- Grand portail encadré, sur la lame de droite ---- */
+  {
+    const L = LAMES[1], x = L.x1 + .004;
+    const zA = -.16, zB = .19, yA = YB + .55, yB = YT - .58, ch = .07;
+    const cadre = [ [zA+ch, yA], [zB-ch, yA], [zB, yA+ch], [zB, yB-ch],
+                    [zB-ch, yB], [zA+ch, yB], [zA, yB-ch], [zA, yA+ch] ];
+    const ext = cadre.map(([z,y]) => pt(x, y, z));
+    const int = cadre.map(([z,y]) => pt(x, YB + (y-YB)*.965, z*.88));
+    fermer(ext, porteur); fermer(int, resille);
+    for(let k = 0; k < ext.length; k++) sg(resille, ext[k], int[k]);
+    neons.push(ext.concat([ext[0]]).map(k => P[k]));
+    // Ce qu'on aperçoit derrière le portail
+    for(let m = 0; m < 9; m++){
+      const y = yA + (yB - yA) * (m + .5)/9;
+      sg(resille, pt(L.x1 - .05, y, zA + .04), pt(L.x1 - .05, y, zB - .04));
+      if(m % 3 === 0) lumieres.push([L.x1 - .05, y, (zA + zB)/2]);
+    }
+  }
+
+  /* ---- Anneau hexagonal lumineux, façade droite ---- */
+  {
+    const L = LAMES[1], x = L.x1 + .006, cy = YB + .40, cz = .05, r = .115;
+    const hex = [], hex2 = [];
+    for(let k = 0; k < 6; k++){
+      const a = k/6 * Math.PI*2 + .52;
+      hex.push(pt(x, cy + Math.sin(a)*r, cz + Math.cos(a)*r));
+      hex2.push(pt(x, cy + Math.sin(a)*r*.72, cz + Math.cos(a)*r*.72));
+    }
+    fermer(hex, porteur); fermer(hex2, porteur);
+    neons.push(hex.concat([hex[0]]).map(k => P[k]));
+    neons.push(hex2.concat([hex2[0]]).map(k => P[k]));
+  }
+
+  /* ---- Échancrure hexagonale, lame de gauche ---- */
+  {
+    const L = LAMES[0], x = L.x0 - .004;
+    const cy = YB + 1.30, cz = .02, rz = .17, ry = .62, ch = .13;
+    const enc = [ [cz-rz, cy-ry+ch], [cz-rz+ch*.7, cy-ry], [cz+rz-ch*.7, cy-ry],
+                  [cz+rz, cy-ry+ch], [cz+rz, cy+ry-ch], [cz+rz-ch*.7, cy+ry],
+                  [cz-rz+ch*.7, cy+ry], [cz-rz, cy+ry-ch] ];
+    const e = enc.map(([z,y]) => pt(x, y, z));
+    fermer(e, porteur);
+    neons.push(e.concat([e[0]]).map(k => P[k]));
+    const e2 = enc.map(([z,y]) => pt(L.x0 + .05, cy + (y-cy)*.9, cz + (z-cz)*.9));
+    fermer(e2, resille);
+    for(let k = 0; k < 8; k++) sg(resille, e[k], e2[k]);
   }
 
   /* ================= LE CANYON ================= */
-  // Entre les deux lames, la machinerie est à nu.
-  const CX0 = -.13, CX1 = .155, CZ = .16;
-  for(let i = 3; i < NN - 3; i++){
-    const y = HB + i*PAS;
-    // planchers traversants, en retrait
-    const q = [ pt(CX0, y, -CZ), pt(CX1, y, -CZ), pt(CX1, y, CZ), pt(CX0, y, CZ) ];
+  const CX0 = LAMES[0].x1, CX1 = LAMES[1].x0;
+  for(let i = 0; i < 30; i++){
+    const y = YB + .18 + i*.082;
+    if(y > YT - .30) break;
+    const rz = .10 + .13 * Math.min(1, (y - YB) / 1.0);
+    const q = [ pt(CX0, y, -rz), pt(CX1, y, -rz), pt(CX1, y, rz), pt(CX0, y, rz) ];
     fermer(q, dalles);
-    // gaines verticales
-    if(i % 3 === 0)
-      for(const x of [CX0 + .06, CX1 - .07])
-        boite(x, y + PAS, ((i*13) % 7 - 3) * .035, .028, PAS, .028, resille);
-    // passerelles en travers, une fois sur quatre
-    if(i % 4 === 1){
-      const a = pt(CX0, y + .012, ((i*5) % 5 - 2) * .05);
-      const b = pt(CX1, y + .012, ((i*5) % 5 - 2) * .05 + .05);
-      sg(porteur, a, b);
-      sg(resille, pt(P[a][0], P[a][1] + .05, P[a][2]), pt(P[b][0], P[b][1] + .05, P[b][2]));
-      lumieres.push([(P[a][0]+P[b][0])/2, P[a][1] + .02, (P[a][2]+P[b][2])/2]);
+    // gaines, caissons, réservoirs
+    if(i % 2 === 0)
+      boite(CX0 + .07 + ((i*11)%5)*.02, y + .04, ((i*7)%5 - 2)*.045,
+            .034, .038, .030, resille);
+    if(i % 5 === 3){
+      const cy2 = y + .05, cz2 = ((i*3)%3 - 1)*.06, r = .048;
+      const a = [], b = [];
+      for(let k = 0; k < 10; k++){
+        const an = k/10*Math.PI*2;
+        a.push(pt(CX0 + .10, cy2 + Math.sin(an)*r, cz2 + Math.cos(an)*r));
+        b.push(pt(CX1 - .10, cy2 + Math.sin(an)*r, cz2 + Math.cos(an)*r));
+      }
+      fermer(a, resille); fermer(b, resille);
+      for(let k = 0; k < 10; k += 2) sg(resille, a[k], b[k]);
+      lumieres.push([(CX0+CX1)/2, cy2, cz2]);
     }
-    if(i % 6 === 2) lumieres.push([(CX0+CX1)/2, y, 0]);
-  }
-  // Deux mâts d'ascenseur dans le canyon
-  for(const x of [CX0 + .02, CX1 - .02]){
-    const b = [], h = [];
-    for(const [sx,sz] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
-      b.push(pt(x + sx*.025, HB, sz*.025 + .09));
-      h.push(pt(x + sx*.025, HB + (NN-3)*PAS, sz*.025 + .09));
+    // conduites horizontales traversantes
+    if(i % 3 === 1){
+      const z = ((i*5)%7 - 3)*.035;
+      sg(porteur, pt(CX0, y + .03, z), pt(CX1, y + .03, z));
+      sg(resille, pt(CX0, y + .055, z), pt(CX1, y + .055, z));
     }
-    fermer(b, porteur); fermer(h, porteur);
-    for(let k = 0; k < 4; k++) sg(porteur, b[k], h[k]);
-    for(let i = 0; i < NN - 3; i += 2)
-      fermer(contour([[P[b[0]][0],P[b[0]][2]],[P[b[1]][0],P[b[1]][2]],
-                      [P[b[2]][0],P[b[2]][2]],[P[b[3]][0],P[b[3]][2]]],
-                     HB + i*PAS), resille);
+    if(i % 4 === 2) lumieres.push([(CX0+CX1)/2, y, rz*.6]);
   }
 
-  /* ================= LE SOCLE EN TERRASSES ================= */
+  /* ================= SOCLE, ESCALATORS, PAVILLON ================= */
   const terrasses = [];
   for(let k = 0; k < 4; k++){
-    const y = SOL + k*.105;
-    const g = 1 - k*.13;
-    const pl = octo(.02, .04, 1.02*g, .78*g, .20*g);
-    const c = contour(pl, y);
+    const y = SOL + k*.10, g = 1 - k*.11;
+    const c = [ pt(-1.22*g, y, -.86*g), pt(-.62*g, y, -1.02*g),
+                pt( .96*g, y, -.80*g), pt(1.26*g, y, -.10*g),
+                pt( .90*g, y,  .88*g), pt(-.34*g, y, 1.02*g),
+                pt(-1.10*g, y, .58*g) ];
     fermer(c, dalles);
-    // garde-corps
-    const gc = contour(octo(.02, .04, 1.02*g - .03, .78*g - .03, .20*g), y + .045);
+    const gc = c.map(m => pt(P[m][0]*.965, y + .042, P[m][2]*.965));
     fermer(gc, resille);
-    for(let m = 0; m < 8; m++) sg(resille, c[m], gc[m]);
-    if(k) for(let m = 0; m < 8; m++) sg(porteur, terrasses[k-1][m], c[m]);
-    terrasses.push(c);
-    // néon de nez de dalle
+    for(let m = 0; m < c.length; m++) sg(resille, c[m], gc[m]);
+    if(k) for(let m = 0; m < c.length; m++) sg(porteur, terrasses[k-1][m], c[m]);
     neons.push(c.concat([c[0]]).map(m => P[m]));
-    // pavillons posés sur la terrasse
-    for(let p2 = 0; p2 < 3; p2++){
-      const an = (k*1.7 + p2*2.3), r = .74*g;
-      const px = .02 + Math.cos(an)*r, pz = .04 + Math.sin(an)*r*.76;
-      if(Math.abs(px) < .62 && Math.abs(pz) < .42) continue;
-      boite(px, y + .075, pz, .085, .055, .07, resille);
-      lumieres.push([px, y + .075, pz]);
-    }
+    terrasses.push(c);
   }
 
-  /* ---- Escalators : rampes obliques avec leurs marches ---- */
-  for(const [x0, z0, x1, z1, y0, y1] of [
-        [-.72, .62, -.30, .30, SOL + .02, SOL + .40],
-        [ .58, .58,  .22, .28, SOL + .02, SOL + .40],
-        [-.34, .40, -.20, .12, SOL + .40, HB]]){
-    const a = pt(x0, y0, z0), b = pt(x1, y1, z1);
-    const a2 = pt(x0 + .10, y0, z0 + .06), b2 = pt(x1 + .10, y1, z1 + .06);
-    sg(porteur, a, b); sg(porteur, a2, b2);
-    for(let m = 0; m <= 12; m++){
-      const t = m/12;
+  // Trois escalators obliques traversant la façade
+  for(const [x0, z0, y0, x1, z1, y1, lg] of [
+        [-.78, .72, SOL + .06, -.16, .18, YB + .10, .13],
+        [ .64, .66, SOL + .06,  .10, .16, YB + .10, .13],
+        [-.20, .58, YB + .06,  -.05, .10, YB + .70, .10]]){
+    const dx = z1 - z0, dz = -(x1 - x0);
+    const n = Math.hypot(dx, dz) || 1;
+    const ox = dx/n*lg, oz = dz/n*lg;
+    const A1 = pt(x0, y0, z0), B1 = pt(x1, y1, z1);
+    const A2 = pt(x0+ox, y0, z0+oz), B2 = pt(x1+ox, y1, z1+oz);
+    sg(porteur, A1, B1); sg(porteur, A2, B2);
+    sg(porteur, A1, A2); sg(porteur, B1, B2);
+    for(let m = 0; m <= 18; m++){
+      const t = m/18;
       const u = pt(x0+(x1-x0)*t, y0+(y1-y0)*t, z0+(z1-z0)*t);
-      const v = pt(x0+.10+(x1-x0)*t, y0+(y1-y0)*t, z0+.06+(z1-z0)*t);
+      const v = pt(x0+ox+(x1-x0)*t, y0+(y1-y0)*t, z0+oz+(z1-z0)*t);
       sg(resille, u, v);
-      if(m % 4 === 0) sg(resille, u, pt(P[u][0], P[u][1] + .07, P[u][2]));
+      if(m % 3 === 0){
+        sg(resille, u, pt(P[u][0], P[u][1] + .085, P[u][2]));
+        sg(resille, v, pt(P[v][0], P[v][1] + .085, P[v][2]));
+      }
     }
-    lumieres.push([(x0+x1)/2 + .05, (y0+y1)/2 + .02, (z0+z1)/2 + .03]);
+    neons.push([[x0, y0 + .085, z0], [x1, y1 + .085, z1]]);
+    lumieres.push([(x0+x1)/2 + ox*.5, (y0+y1)/2 + .04, (z0+z1)/2 + oz*.5]);
   }
 
-  /* ---- Couronnement : casquettes en porte-à-faux, pas de toiture ---- */
-  for(const L of lames){
-    const haut = L.niv[L.n];
-    const dep = .10;
-    const cap = contour(octo(L.cx + .04, L.cz, L.lx+dep, L.lz+dep*.5, L.ch), 
-                        HB + L.n*PAS + .07);
-    fermer(cap, porteur);
-    for(let k = 0; k < 8; k++){ sg(resille, haut[k], cap[k]); }
-    neons.push(cap.concat([cap[0]]).map(k => P[k]));
-    for(let k = 0; k < 8; k += 2) boite(P[cap[k]][0]*.92, HB + L.n*PAS + .14,
-                                        P[cap[k]][2]*.92, .03, .05, .03, resille);
+  // Pavillon bas détaché, à gauche
+  for(let k = 0; k < 3; k++){
+    const y = SOL + .05 + k*.13;
+    const c = [ pt(-1.52, y, .30), pt(-.86, y, .18),
+                pt(-.82, y, .82), pt(-1.56, y, .94) ];
+    fermer(c, dalles);
+    if(k) for(let m = 0; m < 4; m++) sg(porteur, terrasses.length ? c[m] : c[m], c[m]);
+    if(k > 0){
+      for(let m = 0; m < 4; m++)
+        sg(porteur, pt(P[c[m]][0], y - .13, P[c[m]][2]), c[m]);
+      for(let m = 0; m < 4; m++){
+        const A = P[c[m]], B = P[c[(m+1)%4]];
+        for(let w = 1; w < 4; w++){
+          const t = w/4;
+          sg(resille, pt(A[0]+(B[0]-A[0])*t, y - .13, A[2]+(B[2]-A[2])*t),
+                      pt(A[0]+(B[0]-A[0])*t, y,       A[2]+(B[2]-A[2])*t));
+        }
+      }
+    }
+    neons.push(c.concat([c[0]]).map(m => P[m]));
+    if(k === 1) lumieres.push([-1.20, y + .06, .55]);
   }
 
-  const feux = lames.map(L => {
-    const p = P[L.niv[L.n][0]];
-    return [p[0], p[1] + .16, p[2]];
-  });
-
+  const feux = LAMES.map(L => [ (L.x0 + L.x1)/2, YT + .04, 0 ]);
   const filsLumiere = neons;
 
   /* ---- Ancres ---- */
+  const A0 = LAMES[0].planchers, A1 = LAMES[1].planchers;
   const REMARQUABLES = [
-    lames[0].niv[4][0], lames[0].niv[16][3], lames[0].niv[NN][5],
-    lames[1].niv[9][6], lames[1].niv[NN-4][2], terrasses[3][1] ];
+    pt(LAMES[0].x0, A0[3].y, A0[3].za), pt(LAMES[0].x0, A0[18].y, A0[18].zb),
+    pt(LAMES[0].x1, A0[A0.length-2].y, A0[A0.length-2].za),
+    pt(LAMES[1].x1, A1[8].y, A1[8].zb), pt(LAMES[1].x1, A1[24].y, A1[24].za),
+    terrasses[3][2] ];
   for(let i = 0; i < REMARQUABLES.length; i++)
     ancres.push({ idx: REMARQUABLES[i], phase: alea()*6.28, n: i+1,
-                  h: (P[REMARQUABLES[i]][1] - SOL) * 88 });
+                  h: (P[REMARQUABLES[i]][1] - SOL) * 82 });
 
   /* --- Gnomon : les trois axes du relevé --- */
   const AX = 1.30;
