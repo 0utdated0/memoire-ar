@@ -493,10 +493,18 @@ function holo(hote, graine){
   hote.appendChild(tx);
   const t2 = tx.getContext('2d');
 
+  // Une perte de contexte ne doit plus être silencieuse.
+  const surPerte = (e) => {
+    e.preventDefault();
+    console.error('holo : contexte WebGL perdu. Rechargez la page.');
+  };
+
   const gl = cv.getContext('webgl', {
     alpha: true, premultipliedAlpha: true, antialias: false, depth: false
   });
   if(!gl){ console.warn('holo : WebGL indisponible'); return null; }
+  cv.addEventListener('webglcontextlost', surPerte, false);
+  cv.addEventListener('webglcontextrestored', () => location.reload(), false);
 
   const compile = (type, src) => {
     const sh = gl.createShader(type);
@@ -714,26 +722,36 @@ function holo(hote, graine){
 
   /* ---------- Tampons ---------- */
   const FLOTS = 11;                       // par sommet
-  const remplir = (segs) => {
-    const d = new Float32Array(segs.length * 6 * FLOTS);
+  const COINS = [[0,-1],[0,1],[1,-1],[1,-1],[0,1],[1,1]];
+  const remplir = (segs, cible) => {
+    const d = cible && cible.length >= segs.length * 6 * FLOTS
+            ? cible : new Float32Array(segs.length * 6 * FLOTS);
     let k = 0;
-    const coins = [[0,-1],[0,1],[1,-1],[1,-1],[0,1],[1,1]];
     for(const s of segs)
-      for(const c of coins){
+      for(const c of COINS){
         d[k++] = s.a[0]; d[k++] = s.a[1]; d[k++] = s.a[2];
         d[k++] = s.b[0]; d[k++] = s.b[1]; d[k++] = s.b[2];
         d[k++] = c[0];   d[k++] = c[1];
         d[k++] = s.w;    d[k++] = s.al;  d[k++] = s.fam || 0;
       }
-    return d;
+    return { d, n: k };
   };
 
   const bufStat = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, bufStat);
-  gl.bufferData(gl.ARRAY_BUFFER, remplir(statiques), gl.STATIC_DRAW);
+  gl.bufferData(gl.ARRAY_BUFFER, remplir(statiques).d, gl.STATIC_DRAW);
   const nStat = statiques.length * 6;
 
+  /* La géométrie animée est réécrite dans un MÊME tableau à chaque
+     image, et le tampon du GPU est alloué une seule fois à sa taille
+     maximale. Réallouer 800 ko soixante fois par seconde saturait le
+     ramasse-miettes et finissait par faire perdre le contexte WebGL :
+     le modèle disparaissait. */
+  const MAX_DYN = 6000;                       // segments animés au plus
+  const memDyn = new Float32Array(MAX_DYN * 6 * FLOTS);
   const bufDyn = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufDyn);
+  gl.bufferData(gl.ARRAY_BUFFER, memDyn.byteLength, gl.DYNAMIC_DRAW);
   let nDyn = 0;
 
   /* ---------- Atlas : tous les libellés cuits dans une texture ---------- */
@@ -1435,9 +1453,11 @@ function holo(hote, graine){
     };
     tracer(bufStat, nStat);
 
-    const dyn = dynamiques();
+    let dyn = dynamiques();
+    if(dyn.length > MAX_DYN) dyn = dyn.slice(0, MAX_DYN);
+    const r = remplir(dyn, memDyn);
     gl.bindBuffer(gl.ARRAY_BUFFER, bufDyn);
-    gl.bufferData(gl.ARRAY_BUFFER, remplir(dyn), gl.DYNAMIC_DRAW);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, memDyn.subarray(0, r.n));
     nDyn = dyn.length * 6;
     tracer(bufDyn, nDyn);
 
