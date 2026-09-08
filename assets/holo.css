@@ -33,14 +33,6 @@ body{
   overflow-x:hidden;
 }
 
-/* Le mono est réservé aux cartouches, comme le veut la DA */
-.cartouche{
-  font-family:ui-monospace,"SFMono-Regular","JetBrains Mono",monospace;
-  font-size:9.5px;
-  letter-spacing:.06em;
-  line-height:2;
-}
-
 /* Grille blueprint, discrète, et grain -------------------- */
 body::before{
   content:"";

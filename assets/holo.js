@@ -37,7 +37,6 @@ function holo(hote, graine){
 
   const pt  = (x,y,z) => (P.push([x,y,z]), P.length - 1);
   const sg  = (c,a,b) => c.push([a,b]);
-  const quad = (c,a,b,d,e) => { sg(c,a,b); sg(c,b,d); sg(c,d,e); sg(c,e,a); };
 
   /* ---------------------------------------------------------
      LE BÂTIMENT vient désormais du modèle 3D.
@@ -52,7 +51,6 @@ function holo(hote, graine){
      --------------------------------------------------------- */
   const SOL = -1.15;
   const lumieres = [], neons = [];
-  const fermer = (idx, c) => { for(let k=0;k<idx.length;k++) sg(c, idx[k], idx[(k+1)%idx.length]); };
 
   if(typeof FILAIRE_01 === 'undefined'){
     console.error('holo : filaire-01.js n\'est pas chargé');
@@ -267,13 +265,6 @@ function holo(hote, graine){
   /* La trame de sol est découpée une fois pour toutes en quatre
      couronnes d'opacité décroissante. Le faire à chaque image, pour
      chaque tranche et chaque canal, coûtait très cher pour rien. */
-  const trameCour = [0,1].map(c => ({
-    seg: trame.filter(([a,b]) => {
-      const d = Math.max(Math.hypot(P[a][0],P[a][2]), Math.hypot(P[b][0],P[b][2]));
-      return d >= c*G/2 && d < (c+1)*G/2;
-    }),
-    al: .13 * (1 - c*.42)
-  }));
 
 
   /* =========================================================
@@ -281,7 +272,6 @@ function holo(hote, graine){
      Les couches deviennent une liste plate : chaque segment porte
      ses deux extrémités, son épaisseur et son opacité.
      ========================================================= */
-  const G4 = G / 2;
   const rayonSol = (a, b) =>
     Math.max(Math.hypot(P[a][0], P[a][2]), Math.hypot(P[b][0], P[b][2]));
 
@@ -1190,46 +1180,6 @@ function holo(hote, graine){
     ancres[i].fiche = FICHES[i % FICHES.length];
   }
 
-  // Rayon de flou d'un point, calculé comme dans le shader : les
-  // relevés appartiennent à la scène, ils subissent donc la même
-  // profondeur de champ que la géométrie.
-  const flouDe = (zz) => {
-    const d = Math.min(2, Math.abs(zz - Math.sin(tilt)*(SOL + .95)) / 1.15);
-    return Math.min(14, Math.pow(d, 1.55) * 5.5);
-  };
-
-  // Texte flouté par passes décalées : ctx.filter n'est pas fiable
-  // partout, et six étiquettes ne coûtent rien à redessiner.
-  const texteFlou = (txt, x, y, alpha, r) => {
-    if(r < .4){ t2.globalAlpha = alpha; t2.fillText(txt, x, y); return; }
-    const N = Math.min(10, Math.max(5, Math.round(r * 1.6)));
-    t2.globalAlpha = alpha * .32;
-    t2.fillText(txt, x, y);
-    t2.globalAlpha = alpha * .68 / N;
-    for(let i = 0; i < N; i++){
-      const a = i/N * Math.PI*2;
-      t2.fillText(txt, x + Math.cos(a)*r, y + Math.sin(a)*r);
-    }
-  };
-  const traitFlou = (chemin, alpha, r) => {
-    if(r < .4){ t2.globalAlpha = alpha; chemin(0,0); return; }
-    const N = Math.min(10, Math.max(5, Math.round(r * 1.6)));
-    t2.globalAlpha = alpha * .32; chemin(0,0);
-    t2.globalAlpha = alpha * .68 / N;
-    for(let i = 0; i < N; i++){
-      const a = i/N * Math.PI*2;
-      chemin(Math.cos(a)*r, Math.sin(a)*r);
-    }
-  };
-
-  // ctx.filter est fiable ici : on n'est pas en composition additive.
-  let filtreOK = false;
-  try {
-    const c = document.createElement('canvas').getContext('2d');
-    c.filter = 'blur(2px)';
-    filtreOK = (c.filter === 'blur(2px)');
-  } catch(e){}
-
   // Profondeur moyenne du modèle, recalculée à chaque image : c'est
   // elle qui sépare l'avant de l'arrière. Un seuil fixe ne vaut que
   // pour une géométrie donnée, et sautait dès qu'on changeait de
@@ -1242,33 +1192,7 @@ function holo(hote, graine){
     return som / SONDES.length;
   };
 
-  /* Carte de profondeur d'écran : le modèle est projeté une fois par
-     image dans une grille grossière, en retenant la profondeur la plus
-     proche par case. Elle sert à savoir si une étiquette est devant ou
-     derrière le bâtiment, donc sur quel calque la dessiner. Un seul
-     balayage du modèle, quel que soit le nombre d'étiquettes. */
-  const CASE = 22;
-  let grille = null, gW = 0, gH = 0;
-  const construireGrille = () => {
-    gW = Math.ceil(L / CASE) + 1; gH = Math.ceil(H / CASE) + 1;
-    if(!grille || grille.length !== gW * gH) grille = new Float32Array(gW * gH);
-    grille.fill(1e9);
-    for(let i = 0; i < P.length; i += 3){
-      const e = proj(P[i]);
-      const cx = (e[0] / CASE) | 0, cy = (e[1] / CASE) | 0;
-      if(cx < 0 || cy < 0 || cx >= gW || cy >= gH) continue;
-      const k = cy * gW + cx;
-      if(e[2] < grille[k]) grille[k] = e[2];
-    }
-  };
-  const occulte = (q) => {
-    const cx = (q[0] / CASE) | 0, cy = (q[1] / CASE) | 0;
-    if(cx < 0 || cy < 0 || cx >= gW || cy >= gH) return false;
-    return grille[cy * gW + cx] < q[2] - .12;
-  };
-
   const dessineTexte = (dt) => {
-    construireGrille();
     t2.clearRect(0, 0, L, H);
     t2.lineWidth = 1;
     t2.filter = 'none';

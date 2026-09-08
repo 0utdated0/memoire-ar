@@ -3,15 +3,44 @@
 Chaîne : Blender → GLB → GitHub Pages → vignette imprimée → maquette ancrée sur la page.
 
 ```
-index.html            accueil, volume filaire animé
-assets/holo.css       palette, typographie, mise en page
-assets/holo.js        rendu filaire holographique, 4 ko, sans bibliothèque
+index.html               accueil, bâtiment filaire animé
+assets/holo.css          palette, typographie, mise en page
+assets/holo.js           moteur de rendu WebGL, sans bibliothèque
+assets/filaire-01.js     arêtes extraites du modèle 3D
 projets/projet-01.html   gabarit à dupliquer
-modeles/              les .glb
-cibles/               les .mind compilés
-qr/                   les QR générés
+modeles/                 les .glb
+cibles/                  les .mind compilés
+qr/                      les QR générés
 outils/generer-qr.py
 ```
+
+## Le bâtiment de la page d'accueil
+
+Il n'est pas dessiné à la main : ses arêtes sont **extraites d'un GLB**
+par angle dièdre. On ne garde une arête que si les deux faces qui la
+partagent forment un angle marqué, ou si elle est longue. Les arêtes
+internes des surfaces planes et les micro-facettes disparaissent ainsi
+d'elles-mêmes.
+
+Pour changer de bâtiment, il faut régénérer `assets/filaire-01.js` à
+partir du nouveau GLB.
+
+## Le rendu
+
+WebGL, écrit pour ce projet, sans bibliothèque. Trois passes :
+
+1. les segments, transformés en bandeaux par le processeur graphique,
+   avec la profondeur de champ calculée **par pixel** à partir du
+   cercle de confusion de chaque extrémité ;
+2. les étiquettes, cuites dans une texture puis affichées comme des
+   quadrilatères dans la scène ;
+3. l'aberration chromatique, appliquée à l'image entière par décalage
+   radial des trois canaux.
+
+Les réglages du flou sont regroupés dans `holo.js`, chercher `uDemi`.
+La géométrie animée est réécrite dans un tableau réutilisé et envoyée
+par `bufferSubData` : réallouer à chaque image faisait perdre le
+contexte WebGL au bout de quelques secondes.
 
 ## Ajouter un projet
 
