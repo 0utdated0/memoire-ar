@@ -42,7 +42,26 @@ La géométrie animée est réécrite dans un tableau réutilisé et envoyée
 par `bufferSubData` : réallouer à chaque image faisait perdre le
 contexte WebGL au bout de quelques secondes.
 
-## Ajouter un projet
+## Une page par projet
+
+Les quatre pages sont identiques à leurs données près. Tout le
+balisage et toute la logique sont dans `assets/projet.js` : une
+correction s'y fait une seule fois, pas quatre.
+
+Chaque `projets/projet-0N.html` ne contient qu'un bloc `window.PROJET`
+avec son titre, ses chemins et la pose de son modèle. C'est le seul
+endroit à modifier.
+
+## Mettre un projet en service
+
+1. Poser le GLB dans `modeles/projet-0N.glb`
+2. Dessiner la vignette, la compiler, poser le `.mind` dans `cibles/`
+3. Me renvoyer le GLB pour que j'en extraie `assets/filaire-0N.js`,
+   puis pointer `filaire: FILAIRE_0N` dans la page
+4. Régler `rotation`, `echelle` et `position` dans le même bloc
+5. Passer l'état de À VENIR à PRÊT dans `index.html`
+
+## Ancien mode d'emploi
 
 1. Copier `projets/projet-01.html` en `projet-02.html`
 2. Y remplacer le titre, les chemins vers le `.glb` et le `.mind`

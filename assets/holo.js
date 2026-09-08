@@ -16,8 +16,10 @@
    Écrit pour ce projet, sans bibliothèque.
    ============================================================ */
 
-function holo(hote, graine){
+function holo(hote, graine, FIL){
   if(!hote) return null;
+  // Le filaire est passé en paramètre : un projet, un modèle.
+  FIL = FIL || (typeof FILAIRE_01 !== 'undefined' ? FILAIRE_01 : null);
 
   let etat = graine >>> 0;
   const alea = () => {
@@ -52,12 +54,12 @@ function holo(hote, graine){
   const SOL = -1.15;
   const lumieres = [], neons = [];
 
-  if(typeof FILAIRE_01 === 'undefined'){
-    console.error('holo : filaire-01.js n\'est pas chargé');
+  if(!FIL){
+    console.error('holo : aucun filaire fourni');
     return null;
   }
 
-  const FS = FILAIRE_01.s, FA = FILAIRE_01.a, FF = FILAIRE_01.f;
+  const FS = FIL.s, FA = FIL.a, FF = FIL.f;
   const base = P.length;
   for(let i = 0; i < FS.length; i += 3)
     pt(FS[i], SOL + FS[i+1], FS[i+2]);
@@ -853,8 +855,16 @@ function holo(hote, graine){
   const AUTO = .0009;
   let vitesse = AUTO, tire = false, xP = 0, yP = 0;
 
-  hote.style.touchAction = 'none';
+  // Sur mobile, 'none' bloquerait aussi le défilement de la page :
+  // impossible de faire défiler en glissant sur le bâtiment. On ne
+  // capte donc que l'horizontale et on laisse la verticale au
+  // navigateur. Sur grand écran, le glissé sert aux deux axes.
+  const petit = () => (innerWidth || 1024) < 760;
+  hote.style.touchAction = petit() ? 'pan-y' : 'none';
   hote.style.cursor = 'grab';
+  addEventListener('resize', () => {
+    hote.style.touchAction = petit() ? 'pan-y' : 'none';
+  });
   hote.addEventListener('pointerdown', e => {
     tire = true; xP = e.clientX; yP = e.clientY;
     hote.style.cursor = 'grabbing';
@@ -866,13 +876,16 @@ function holo(hote, graine){
     xP = e.clientX; yP = e.clientY;
     vitesse = dx * .0055;
     angle += vitesse;
-    tilt = Math.max(-1.45, Math.min(1.45, tilt + dy*.0045));
+    if(!petit()) tilt = Math.max(-1.45, Math.min(1.45, tilt + dy*.0045));
   });
   const fin = () => { tire = false; hote.style.cursor = 'grab'; };
   ['pointerup','pointercancel','pointerleave'].forEach(n => hote.addEventListener(n, fin));
 
   // Projection identique à celle du shader, pour placer le texte.
-  const ECH = () => Math.min(L, H) * .39;   // cadrage large
+  // Sur un cadre étroit, la plus petite dimension est la largeur, et
+  // le modèle, plus large que haut une fois projeté, débordait des
+  // côtés. On resserre à mesure que le cadre se rétrécit.
+  const ECH = () => Math.min(L, H) * (L < 760 ? .30 : .39);
   const proj = (p) => {
     const ca = Math.cos(angle), sa = Math.sin(angle);
     const x = p[0]*ca - p[2]*sa, z1 = p[0]*sa + p[2]*ca;

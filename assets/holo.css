@@ -227,3 +227,73 @@ footer{
   .leve{opacity:1}
   .scene{transform:none}
 }
+
+
+/* ============================================================
+   MOBILE
+   Sur grand écran, le bâtiment et le texte se superposent : il y a
+   la place. Sur un téléphone, la même superposition rend tout
+   illisible. On sépare donc les deux : le volume occupe le haut de
+   l'écran, le contenu défile en dessous sur un fond opaque.
+   ============================================================ */
+@media (max-width: 760px){
+
+  :root{ --marge: 18px; }
+
+  html, body{ overflow-x:hidden; overflow-y:auto; height:auto; }
+
+  /* Le volume est cantonné au haut de l'écran et y reste fixe. */
+  .scene{ top:0; left:0; right:0; height:52svh; bottom:auto; }
+  .lueur{ height:60svh; bottom:auto; }
+
+  /* L'en-tête reste accroché en haut, au-dessus du volume. */
+  .entete{
+    position:fixed; top:0; left:0; right:0; z-index:14;
+    padding:12px var(--marge) 10px;
+    background:linear-gradient(to bottom, var(--fond) 55%, transparent);
+  }
+  .entete .titre{ font-size:13px }
+  .entete .meta{ font-size:8.5px; letter-spacing:.05em; text-align:right }
+
+  /* Le contenu descend sous le volume et défile, sur fond plein :
+     plus aucun chevauchement possible. */
+  .hud{
+    display:block; min-height:auto;
+    padding:0 var(--marge) calc(28px + env(safe-area-inset-bottom));
+  }
+  .pied{
+    max-width:none;
+    margin-top:50svh;
+    padding-top:34px;
+    background:linear-gradient(to bottom, transparent, var(--fond) 34px);
+  }
+  .enonce{ font-size:12.5px; line-height:1.7; margin-bottom:20px; max-width:none }
+
+  /* Cibles tactiles à 48 px, ce qui est le minimum confortable. */
+  .projets a{ grid-template-columns:2rem 1fr auto; gap:12px; padding:15px 2px; min-height:48px }
+  .projets a:hover, .projets a:focus-visible{ padding-left:2px }
+  .projets .nom{ font-size:14px }
+  .projets .rang, .projets .st{ font-size:8.5px }
+
+  footer{ font-size:8.5px; line-height:1.85; margin-top:20px }
+
+  /* Le grain et le vignettage restent, mais allégés : sur une petite
+     dalle très dense ils saturent le peu de place disponible. */
+  .grain{ opacity:.055 }
+  .vignettage{ background:
+    radial-gradient(72% 46% at 50% 26%, transparent 0%, rgba(3,8,15,.30) 70%, rgba(3,8,15,.62) 100%); }
+
+  /* Les cartouches de marge et l'invite au glissé n'ont pas de sens
+     ici : pas de souris, et pas de place. */
+  .releve, .invite{ display:none }
+}
+
+/* Écrans très courts, ou téléphone en paysage. */
+@media (max-width: 760px) and (max-height: 560px){
+  .scene{ height:44svh }
+  .pied{ margin-top:42svh }
+}
+
+@media (prefers-reduced-motion:reduce){
+  .scene{ transform:none }
+}
