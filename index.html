@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./assets/holo.css?v=66">
+<link rel="stylesheet" href="./assets/holo.css?v=70">
 </head>
 <body>
 
@@ -38,7 +38,8 @@
     <p class="enonce">
       Les projets étudiés dans ce mémoire n'ont jamais quitté le papier.
       Ils sont ici remodélisés, puis rendus à l'échelle.
-      <b>Scannez une vignette imprimée et le bâtiment se lève de la page.</b>
+      <b>Scannez un QR du mémoire et posez le bâtiment dans la pièce,
+      à sa taille réelle.</b>
     </p>
 
     <ul class="projets">
@@ -67,10 +68,10 @@
 
 </main>
 
-<script src="./assets/filaire-accueil.js?v=66"></script>
-<script src="./assets/holo.js?v=66"></script>
+<script src="./assets/filaire-01.js?v=70"></script>
+<script src="./assets/holo.js?v=70"></script>
 <script>
-  holo(document.getElementById('scene'), 20260907, FILAIRE_ACCUEIL);
+  holo(document.getElementById('scene'), 20260907);
   // L'invite disparaît dès que la personne a compris
   const inv = document.getElementById('invite');
   addEventListener('pointerdown', () => inv && inv.classList.add('parti'), { once:true });

@@ -1,2 +1,0 @@
-Deposer ici le .mind compile.
-sources/ conserve les vignettes PNG.

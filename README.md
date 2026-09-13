@@ -55,11 +55,26 @@ endroit à modifier.
 ## Mettre un projet en service
 
 1. Poser le GLB dans `modeles/projet-0N.glb`
-2. Dessiner la vignette, la compiler, poser le `.mind` dans `cibles/`
-3. Me renvoyer le GLB pour que j'en extraie `assets/filaire-0N.js`,
-   puis pointer `filaire: FILAIRE_0N` dans la page
-4. Régler `rotation`, `echelle` et `position` dans le même bloc
-5. Passer l'état de À VENIR à PRÊT dans `index.html`
+2. Dans `projets/projet-0N.html`, renseigner le titre
+3. Générer le QR avec `outils/generer-qr.py`
+4. Passer l'état de À VENIR à PRÊT dans `index.html`
+
+## Comment marche la réalité augmentée
+
+Le parcours tient en deux gestes : on scanne le QR, la page ouvre et
+affiche déjà la maquette, puis un seul bouton lance la réalité
+augmentée. Un tap reste obligatoire pour y entrer, les navigateurs
+l'exigent pour des raisons de sécurité.
+
+C'est `model-viewer` qui pilote tout, en appelant **ARKit via Quick
+Look** sur iOS et **ARCore via Scene Viewer** sur Android. Le bâtiment
+est posé sur une surface réelle, à sa taille réelle, et on tourne
+autour.
+
+Le suivi d'image, qui ancrait le modèle sur une vignette imprimée, a
+été abandonné : il tremblait, exigeait trois gestes, et son ancrage
+était le maillon fragile de la chaîne. Le dossier `cibles/` et les
+fichiers `.mind` ont disparu avec lui.
 
 ## Ancien mode d'emploi
 

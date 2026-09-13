@@ -11,7 +11,9 @@ import qrcode.image.svg
 from pathlib import Path
 
 # À RENSEIGNER
-DOMAINE = "https://ton-domaine.fr"
+# Tant qu il n y a pas de nom de domaine, on pointe GitHub Pages.
+# À remplacer AVANT l impression : les QR imprimés sont figés.
+DOMAINE = "https://0utdated0.github.io/memoire-ar"
 
 PROJETS = [
     ("projet-01", "Titre du projet 01"),
