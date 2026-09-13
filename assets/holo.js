@@ -844,9 +844,13 @@ function holo(hote, graine, FIL){
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
                             gl.TEXTURE_2D, texte, 0);
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, L*DPR, H*DPR);
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT,
-                               gl.RENDERBUFFER, globalThis.__rbz);
+    // Contrôle de complétude : un framebuffer incomplet rejette TOUT
+    // le rendu en silence, écran vide sans message. C'est exactement
+    // ce qui est arrivé lorsqu'un reste d'attache de profondeur a
+    // survécu à une suppression.
+    const etat = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if(etat !== gl.FRAMEBUFFER_COMPLETE)
+      console.error('holo : framebuffer incomplet, code', etat);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   };
 
