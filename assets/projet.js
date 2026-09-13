@@ -45,6 +45,13 @@
   alt="Maquette du projet ${num}">
   <div slot="progress-bar"></div>
   <button slot="ar-button" id="ar-natif" hidden></button>
+  ${(P.ancres||[]).map((a,i) => `
+  <button class="ancre" slot="hotspot-${i}"
+          data-position="${a.p}" data-normal="0 1 0"
+          data-visibility-attribute="visible">
+    <span class="ancre-pt"></span>
+    <span class="ancre-txt"><b>${a.t}</b>${a.d ? '<i>'+a.d+'</i>' : ''}</span>
+  </button>`).join('')}
 </model-viewer>
 
 <header class="entete-projet">
@@ -55,8 +62,16 @@
 <div class="bas-projet">
   <p class="titre-projet">${P.titre}</p>
   <button class="action" id="voir">Voir le bâtiment dans la pièce</button>
+  <button class="lien-fiche" id="ouvre-fiche">Relevé technique</button>
   <p class="note" id="note">${P.echelle ? 'Maquette au ' + P.echelle + ' · ' : ''}faites-la tourner du doigt.</p>
-</div>`);
+</div>
+
+<section class="fiche" id="fiche" aria-hidden="true">
+  <button class="ferme-fiche" id="ferme-fiche">Fermer</button>
+  <h2>${P.titre}</h2>
+  <dl>${(P.fiche||[]).map(([c,v]) => `<dt>${c}</dt><dd>${v}</dd>`).join('')}</dl>
+  ${P.texte ? '<p class="fiche-texte">'+P.texte+'</p>' : ''}
+</section>`);
 
   const mv   = document.getElementById('mv');
   const voir = document.getElementById('voir');
@@ -83,5 +98,28 @@
 
   mv.addEventListener('error', () => {
     note.textContent = "Le modèle n'a pas pu être chargé.";
+  });
+
+  // Relevé technique : il glisse depuis le bas, sans quitter la vue.
+  const fiche = document.getElementById('fiche');
+  const bascule = (ouvert) => {
+    fiche.classList.toggle('visible', ouvert);
+    fiche.setAttribute('aria-hidden', String(!ouvert));
+  };
+  document.getElementById('ouvre-fiche').addEventListener('click', () => bascule(true));
+  document.getElementById('ferme-fiche').addEventListener('click', () => bascule(false));
+
+  // Une ancre ouverte à la fois : sinon les libellés se chevauchent
+  // dès qu'on tourne la maquette.
+  for(const a of document.querySelectorAll('.ancre')){
+    a.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const etait = a.classList.contains('ouverte');
+      document.querySelectorAll('.ancre.ouverte').forEach(o => o.classList.remove('ouverte'));
+      if(!etait) a.classList.add('ouverte');
+    });
+  }
+  mv.addEventListener('click', () => {
+    document.querySelectorAll('.ancre.ouverte').forEach(o => o.classList.remove('ouverte'));
   });
 })();
