@@ -854,6 +854,7 @@ function holo(hote, graine, FIL){
   const lent = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const AUTO = .0009;
   let vitesse = AUTO, tire = false, xP = 0, yP = 0;
+  let idTire = null, sensAuto = 1;   // pointeur actif, sens de la dérive
 
   // Sur mobile, 'none' bloquerait aussi le défilement de la page :
   // impossible de faire défiler en glissant sur le bâtiment. On ne
@@ -865,21 +866,43 @@ function holo(hote, graine, FIL){
   addEventListener('resize', () => {
     hote.style.touchAction = petit() ? 'pan-y' : 'none';
   });
-  hote.addEventListener('pointerdown', e => {
-    tire = true; xP = e.clientX; yP = e.clientY;
-    hote.style.cursor = 'grabbing';
-    if(hote.setPointerCapture) hote.setPointerCapture(e.pointerId);
-  });
-  hote.addEventListener('pointermove', e => {
-    if(!tire) return;
-    const dx = e.clientX - xP, dy = e.clientY - yP;
+hote.addEventListener('pointerdown', e => {
+    if(tire) return;                       // un seul doigt à la fois
+    tire = true; idTire = e.pointerId;
     xP = e.clientX; yP = e.clientY;
+    hote.style.cursor = 'grabbing';
+    if(hote.setPointerCapture) try{ hote.setPointerCapture(e.pointerId); }catch(err){}
+  });
+
+  hote.addEventListener('pointermove', e => {
+    // On n'écoute QUE le pointeur qui a commencé le geste : sans ce
+    // filtre, un second doigt ou un survol parasite pilotait aussi la
+    // rotation.
+    if(!tire || e.pointerId !== idTire) return;
+    let dx = e.clientX - xP, dy = e.clientY - yP;
+    xP = e.clientX; yP = e.clientY;
+    // Un saut énorme signale un événement aberrant, pas un geste.
+    if(Math.abs(dx) > 220 || Math.abs(dy) > 220) return;
     vitesse = dx * .0055;
     angle += vitesse;
     if(!petit()) tilt = Math.max(-1.45, Math.min(1.45, tilt + dy*.0045));
   });
-  const fin = () => { tire = false; hote.style.cursor = 'grab'; };
-  ['pointerup','pointercancel','pointerleave'].forEach(n => hote.addEventListener(n, fin));
+
+  const fin = (e) => {
+    if(e && e.pointerId !== undefined && e.pointerId !== idTire) return;
+    tire = false; idTire = null;
+    hote.style.cursor = 'grab';
+    // La dérive automatique repart DANS LE SENS du dernier geste.
+    // Elle avait un sens fixe : après un glissé vers la gauche, le
+    // modèle ralentissait, s'arrêtait, puis repartait vers la droite.
+    if(Math.abs(vitesse) > 1e-5) sensAuto = Math.sign(vitesse);
+  };
+  // Surtout PAS 'pointerleave' : il se déclenche dès que le curseur
+  // passe sur un élément enfant, ce qui coupait le glissé en plein
+  // mouvement et laissait la rotation automatique reprendre la main.
+  hote.addEventListener('pointerup', fin);
+  hote.addEventListener('pointercancel', fin);
+  addEventListener('blur', () => fin());
 
   // Projection identique à celle du shader, pour placer le texte.
   // Sur un cadre étroit, la plus petite dimension est la largeur, et
@@ -1425,7 +1448,7 @@ function holo(hote, graine, FIL){
     tPrec = t;
     temps = t || 0;
     if(!tire && !lent){
-      vitesse += (AUTO - vitesse) * .035;
+      vitesse += (AUTO * sensAuto - vitesse) * .035;
       angle += vitesse;
     }
     rendu();

@@ -14,10 +14,8 @@ from pathlib import Path
 DOMAINE = "https://ton-domaine.fr"
 
 PROJETS = [
-    ("projet-01", "Tour à éclats"),
+    ("projet-01", "Titre du projet 01"),
     ("projet-02", "Titre du projet 02"),
-    ("projet-03", "Titre du projet 03"),
-    ("projet-04", "Titre du projet 04"),
 ]
 
 SORTIE = Path(__file__).resolve().parent.parent / "qr"

@@ -49,6 +49,7 @@
 </section>
 
 <a-scene
+  gltf-model="dracoDecoderPath: https://www.gstatic.com/draco/versioned/decoders/1.5.6/"
   mindar-image="imageTargetSrc: ${P.mind}; autoStart: false; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 10; warmupTolerance: 8; missTolerance: 15"
   color-space="sRGB"
   renderer="colorManagement: true, physicallyCorrectLights, antialias: true, alpha: true"
