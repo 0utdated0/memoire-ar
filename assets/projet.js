@@ -14,8 +14,14 @@
    Un tap reste obligatoire pour entrer en AR : les navigateurs
    l'exigent, c'est une sécurité du système. On le rend unique.
 
+   Le modèle est mis à l'échelle DANS le GLB, sur ses nœuds racine :
+   à sa taille réelle le bâtiment ferait deux cents mètres et se
+   poserait comme une tour au milieu de la pièce. Réduit au 1/600, il
+   devient une maquette de table de trente-trois centimètres.
+   `ar-scale="fixed"` garantit qu'il garde cette taille.
+
    La page appelante ne déclare que :
-     PROJET = { n, titre, glb, usdz }
+     PROJET = { n, titre, glb, usdz, echelle }
    ============================================================ */
 (function(){
   const P = window.PROJET;
@@ -49,7 +55,7 @@
 <div class="bas-projet">
   <p class="titre-projet">${P.titre}</p>
   <button class="action" id="voir">Voir le bâtiment dans la pièce</button>
-  <p class="note" id="note">Faites tourner la maquette du doigt.</p>
+  <p class="note" id="note">${P.echelle ? 'Maquette au ' + P.echelle + ' · ' : ''}faites-la tourner du doigt.</p>
 </div>`);
 
   const mv   = document.getElementById('mv');
