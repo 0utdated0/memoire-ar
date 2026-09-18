@@ -23,6 +23,12 @@ GRIS  = (132, 146, 164, 255)
 CYAN  = (86, 198, 222, 255)
 FOND  = (9, 16, 28, 255)
 
+# La maquette fait toujours cette hauteur une fois posée sur la table,
+# et on veut des chiffres de cette taille-là dessus. Tout le corps du
+# texte de la réglette se déduit de ces deux nombres.
+TAILLE_MAQUETTE = 0.202     # mètres, hauteur de la maquette imprimée
+TEXTE_MM        = 3.0       # millimètres, hauteur visée des nombres
+
 
 # ----------------------------------------------------------------------
 #  Images
@@ -70,21 +76,43 @@ def image_cartouche(titre, lignes, mention, largeur_px=2048, hauteur_px=448):
     return im
 
 
-def image_reglette(hauteur_reelle, pas_m, largeur_px=256, hauteur_px=2048):
-    """Graduations et altitudes, lues de bas en haut."""
+X_ETIQ = 0.26          # début des nombres, en fraction de la largeur
+
+
+def image_reglette(hauteur_reelle, pas_m, largeur_px=256, hauteur_px=2048,
+                   corps_px=None):
+    """Graduations et altitudes RÉELLES, lues de bas en haut.
+
+    `hauteur_reelle` est la hauteur du bâtiment en mètres, pas la
+    hauteur du modèle dans ses propres unités : une maquette dessinée
+    à 1/5409 dans un fichier où le bâtiment mesure 201 unités doit
+    quand même être graduée jusqu'à 1082.
+
+    `hauteur_px` doit respecter le rapport de la plaquette qui portera
+    l'image, sans quoi les chiffres sont étirés dans un sens.
+    """
     im = Image.new('RGBA', (largeur_px, hauteur_px), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    f = ImageFont.truetype(MONO, int(largeur_px * 0.30))
     n = int(hauteur_reelle // pas_m)
+
+    # Le corps est réduit jusqu'à ce que le plus long nombre tienne :
+    # « 1000 » déborde là où « 100 » passe.
+    lmax = max((len(f"{i * pas_m:.0f}") for i in range(2, n + 1, 2)), default=1)
+    dispo = largeur_px * (1 - X_ETIQ)
+    corps = int(corps_px or largeur_px * 0.30)
+    while corps > 8 and ImageFont.truetype(MONO, corps).getlength('0' * lmax) > dispo:
+        corps -= 2
+    f = ImageFont.truetype(MONO, corps)
+
     for i in range(n + 1):
         z = i * pas_m
         y = hauteur_px - 1 - (z / hauteur_reelle) * (hauteur_px - 1)
         grand = (i % 2 == 0)
-        lg = largeur_px * (0.42 if grand else 0.24)
+        lg = largeur_px * (0.22 if grand else 0.13)
         ep = max(2, int(largeur_px * (0.035 if grand else 0.022)))
         d.rectangle([0, y - ep / 2, lg, y + ep / 2], fill=CYAN if grand else GRIS)
         if grand and i:
-            d.text((largeur_px * 0.50, y), f"{z:.0f}", font=f, fill=CLAIR, anchor="lm")
+            d.text((largeur_px * X_ETIQ, y), f"{z:.0f}", font=f, fill=CLAIR, anchor="lm")
     return im
 
 
@@ -127,7 +155,8 @@ def _boite(lx, ly, lz, centre, couleur, biseau=0.0):
 
 
 def construire_socle(bbox_min, bbox_max, titre, lignes, mention,
-                     pas_reglette=20.0, marge_avant=None, marge_cote=None):
+                     pas_reglette=20.0, marge_avant=None, marge_cote=None,
+                     hauteur_reelle=None):
     """Renvoie une scène trimesh : plaque, cartouche, réglette."""
     mn, mx = np.asarray(bbox_min, float), np.asarray(bbox_max, float)
     dim = mx - mn
@@ -158,15 +187,31 @@ def construire_socle(bbox_min, bbox_max, titre, lignes, mention,
     pl.apply_translation([cx, mn[1] + ep * 0.12, zc])
     sc.add_geometry(pl, node_name='cartouche')
 
-    # réglette : un mât fin et une bande graduée, côté droit
-    rx = mx[0] + co * 0.55
-    sc.add_geometry(_boite(emprise*0.004, H, emprise*0.004,
-                           [rx, mn[1] + H/2, cz], [0.18, 0.62, 0.74, 1.0]),
+    # Réglette : un mât fin et une bande graduée, dans la bande libre
+    # entre le flanc droit du bâtiment et le bord de la plaque. Elle
+    # occupe TOUTE cette bande : plus elle est large, plus les nombres
+    # peuvent être gros sans être étirés.
+    HR = float(hauteur_reelle or H)      # mètres réels du bâtiment
+    jeu = emprise * 0.006
+    ep_mat = emprise * 0.004
+    x_droite = cx + SX - jeu
+    x_mat = mx[0] + jeu * 2
+    x_gauche = x_mat + ep_mat
+    lr = max(emprise * 0.05, x_droite - x_gauche)
+
+    sc.add_geometry(_boite(ep_mat, H, ep_mat,
+                           [x_mat + ep_mat/2, mn[1] + H/2, cz],
+                           [0.18, 0.62, 0.74, 1.0]),
                     node_name='reglette_mat')
-    imr = image_reglette(H, pas_reglette)
-    lr = emprise * 0.085
+
+    # L'image suit le rapport de la plaquette, et le corps du texte est
+    # posé d'après une hauteur visée SUR LA MAQUETTE, pas en pixels.
+    LARG_PX = 256
+    haut_px = max(512, int(round(LARG_PX * H / lr)))
+    corps = TEXTE_MM * haut_px / (TAILLE_MAQUETTE * 1000.0)
+    imr = image_reglette(HR, pas_reglette, LARG_PX, haut_px, corps_px=corps)
     pr = _plaquette(lr, H, imr, plan='xy')
-    pr.apply_translation([rx + lr/2, mn[1] + H/2, cz])
+    pr.apply_translation([x_gauche + lr/2, mn[1] + H/2, cz])
     sc.add_geometry(pr, node_name='reglette')
     return sc
 
