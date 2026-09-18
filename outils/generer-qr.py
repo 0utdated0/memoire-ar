@@ -21,8 +21,8 @@ import qrcode.image.svg
 DOMAINE = "https://0utdated0.github.io/memoire-ar"
 
 PROJETS = [
-    ("projet-01", "Titre du projet 01"),
-    ("projet-02", "Titre du projet 02"),
+    ("projet-01", "Cadastre Vertical"),
+    ("projet-02", "La Futaie"),
 ]
 
 COTE_MM = 40.0      # côté du QR seul, hors marge blanche
