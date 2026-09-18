@@ -98,7 +98,13 @@ def _plaquette(l, h, image, plan='xz'):
     else:
         v = np.array([[-l/2, -h/2, 0], [l/2, -h/2, 0], [l/2, h/2, 0], [-l/2, h/2, 0]], float)
     f = np.array([[0, 1, 2], [0, 2, 3]])
-    uv = np.array([[0, 1], [1, 1], [1, 0], [0, 0]], float)
+    # trimesh retourne le V à l'export glTF (convention bas-haut contre
+    # haut-bas). Ces coordonnées sont donc écrites à l'envers EXPRÈS :
+    # une fois retournées, le haut de l'image tombe du côté opposé à
+    # l'observateur pour le cartouche posé à plat, et en haut du mât
+    # pour la réglette. L'inverse donnait un texte en miroir et une
+    # graduation dont le zéro était en l'air.
+    uv = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], float)
     m = trimesh.Trimesh(vertices=v, faces=f, process=False)
     m.visual = trimesh.visual.TextureVisuals(
         uv=uv, material=trimesh.visual.material.PBRMaterial(
