@@ -44,37 +44,57 @@ contexte WebGL au bout de quelques secondes.
 
 ## Une page par projet
 
-Les quatre pages sont identiques à leurs données près. Tout le
-balisage et toute la logique sont dans `assets/projet.js` : une
-correction s'y fait une seule fois, pas quatre.
+Les pages sont identiques à leurs données près. Tout le balisage est
+dans `assets/projet.js`, toute la mise en forme dans `assets/holo.css` :
+une correction s'y fait une seule fois, pas une par projet.
 
-Chaque `projets/projet-0N.html` ne contient qu'un bloc `window.PROJET`
-avec son titre, ses chemins et la pose de son modèle. C'est le seul
-endroit à modifier.
+Chaque `projets/projet-0N.html` ne contient qu'un bloc `window.PROJET`.
+C'est le seul endroit à modifier.
 
 ## Mettre un projet en service
 
 1. Poser le GLB dans `modeles/projet-0N.glb`
-2. Dans `projets/projet-0N.html`, renseigner le titre
-3. Générer le QR avec `outils/generer-qr.py`
-4. Passer l'état de À VENIR à PRÊT dans `index.html`
+2. Renseigner le titre, le relevé et les ancres dans la page
+3. Déposer les photos dans `photos/projet-0N/`
+4. Générer le QR avec `outils/generer-qr.py`
+5. Passer l'état à PRÊT dans `index.html`
+
+## Les maquettes
+
+Les deux modèles sont **réduits à 20 cm dans le GLB même**, sur un nœud
+d'échelle unique. À leur taille réelle ils se poseraient comme des tours
+au milieu de la pièce. `ar-scale="fixed"` leur fait garder cette taille.
+
+L'échelle de chacun a été **mesurée, pas supposée** :
+
+- projet 01 : la trame des fenêtres, hautes de 1,80 m, donne 343 rangées,
+  soit 1081,80 m et une hauteur d'étage de 3,15 m. 1/5409.
+- projet 02 : les garde-corps mesurent 1,04 à 1,17 unité, soit la
+  hauteur réglementaire d'un garde-corps ; l'unité vaut donc le mètre.
+  116,19 m, treize plateaux espacés de 6,37 m. 1/581.
+
+Chaque maquette porte un socle avec son cartouche et une réglette
+graduée. Le texte n'y est pas modelé en lettres mais **cuit dans une
+image posée sur deux triangles** : des lettres en volume accrochent la
+lumière, coûtent des dizaines de milliers de triangles, et doivent être
+mesurées pour tenir dans leur cadre. Les socles pèsent 40 triangles.
+
+Ils se régénèrent avec `outils/socle.py`.
 
 ## Comment marche la réalité augmentée
 
-Le parcours tient en deux gestes : on scanne le QR, la page ouvre et
-affiche déjà la maquette, puis un seul bouton lance la réalité
-augmentée. Un tap reste obligatoire pour y entrer, les navigateurs
-l'exigent pour des raisons de sécurité.
+Deux gestes : on scanne le QR, la page ouvre sur la maquette, un bouton
+lance la réalité augmentée. Le tap est imposé par les navigateurs.
 
-C'est `model-viewer` qui pilote tout, en appelant **ARKit via Quick
-Look** sur iOS et **ARCore via Scene Viewer** sur Android. Le bâtiment
-est posé sur une surface réelle, à sa taille réelle, et on tourne
-autour.
+`model-viewer` appelle **ARKit via Quick Look** sur iOS et **ARCore via
+Scene Viewer** sur Android. Le suivi d'image, qui ancrait le modèle sur
+une vignette imprimée, a été abandonné : il tremblait et exigeait trois
+gestes. Les vignettes ne servent plus qu'à porter le QR.
 
-Le suivi d'image, qui ancrait le modèle sur une vignette imprimée, a
-été abandonné : il tremblait, exigeait trois gestes, et son ancrage
-était le maillon fragile de la chaîne. Le dossier `cibles/` et les
-fichiers `.mind` ont disparu avec lui.
+## Les photos
+
+Un dossier par projet dans `photos/`. Voir `photos/LISEZMOI.txt`.
+Une image absente retire sa vignette au lieu de laisser un trou.
 
 ## Ancien mode d'emploi
 

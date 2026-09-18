@@ -297,3 +297,167 @@ footer{
 @media (prefers-reduced-motion:reduce){
   .scene{ transform:none }
 }
+
+/* ============================================================
+   PAGES PROJET
+   Elles étaient dupliquées dans le <style> de chaque page : une
+   correction devait être reportée autant de fois qu'il y a de
+   projets. Elles vivent ici une bonne fois.
+   ============================================================ */
+model-viewer{
+  position:fixed;inset:0;width:100%;height:100%;
+  --poster-color:transparent;background:transparent;
+}
+
+.entete-projet{
+  position:fixed;top:0;left:0;right:0;z-index:14;
+  display:flex;justify-content:space-between;align-items:baseline;
+  padding:calc(14px + env(safe-area-inset-top)) var(--marge) 12px;
+  font-family:ui-monospace,"SFMono-Regular",monospace;
+  font-size:10px;letter-spacing:.06em;color:var(--gris-archive);
+  background:linear-gradient(to bottom,var(--fond) 40%,transparent);
+}
+.entete-projet a{color:var(--gris-archive);text-decoration:none}
+.entete-projet a:hover{color:var(--blanc-casse)}
+
+.bas-projet{
+  position:fixed;left:0;right:0;bottom:0;z-index:14;
+  padding:22px var(--marge) calc(18px + env(safe-area-inset-bottom));
+  background:linear-gradient(to top,var(--fond) 66%,transparent);
+  text-align:center;
+}
+.titre-projet{
+  margin:0 0 14px;font-family:"Inter",system-ui,sans-serif;
+  font-weight:300;font-size:16px;color:var(--blanc-casse);
+}
+.note{
+  margin:10px 0 0;font-family:ui-monospace,monospace;
+  font-size:10px;letter-spacing:.05em;color:var(--gris-archive);
+}
+.action{
+  display:block;width:100%;max-width:420px;margin:0 auto;
+  font-family:"Inter",system-ui,sans-serif;font-weight:400;font-size:14px;
+  text-align:center;cursor:pointer;border-radius:1px;
+  padding:17px;min-height:54px;
+  border:1px solid var(--bleu-blueprint);color:var(--blanc-casse);
+  background:rgba(3,8,15,.55);
+  transition:background .3s ease,color .3s ease;
+}
+.action:hover,.action:focus-visible{background:var(--bleu-blueprint);color:#fff}
+.action.inactif{border-color:var(--beton-clair);color:var(--gris-archive);cursor:default}
+.action.inactif:hover{background:rgba(3,8,15,.55);color:var(--gris-archive)}
+
+/* ---- Ancres posées sur la maquette ---- */
+.ancre{display:block;width:14px;height:14px;padding:0;border:0;background:transparent;cursor:pointer}
+.ancre-pt{
+  display:block;width:9px;height:9px;border-radius:50%;
+  background:var(--cyan);box-shadow:0 0 0 3px rgba(56,188,216,.22);
+}
+.ancre-txt{
+  position:absolute;left:16px;top:-6px;white-space:nowrap;
+  padding:7px 10px;border:1px solid var(--bleu-blueprint);
+  background:rgba(3,8,15,.88);backdrop-filter:blur(10px);
+  opacity:0;transform:translateX(-4px);pointer-events:none;
+  transition:opacity .25s ease,transform .25s ease;
+}
+.ancre.ouverte .ancre-txt{opacity:1;transform:none}
+.ancre-txt b{
+  display:block;font-family:"Inter",system-ui,sans-serif;font-weight:400;
+  font-size:12px;color:var(--blanc-casse);
+}
+.ancre-txt i{
+  display:block;margin-top:3px;font-style:normal;
+  font-family:ui-monospace,monospace;font-size:9.5px;
+  letter-spacing:.05em;color:var(--gris-archive);
+}
+
+/* ---- Relevé technique ---- */
+.lien-fiche{
+  display:block;margin:11px auto 0;padding:8px;background:none;border:0;cursor:pointer;
+  font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.08em;
+  color:var(--gris-archive);text-decoration:underline;text-underline-offset:4px;
+}
+.lien-fiche:hover{color:var(--blanc-casse)}
+.fiche{
+  position:fixed;left:0;right:0;bottom:0;z-index:24;
+  max-height:82svh;overflow-y:auto;
+  padding:26px var(--marge) calc(30px + env(safe-area-inset-bottom));
+  background:rgba(3,8,15,.97);backdrop-filter:blur(18px);
+  border-top:1px solid var(--bleu-blueprint);
+  transform:translateY(102%);transition:transform .45s cubic-bezier(.2,.8,.2,1);
+}
+.fiche.visible{transform:none}
+.fiche h2{margin:0 0 18px;font-family:"Inter",system-ui,sans-serif;font-weight:200;font-size:21px;color:var(--blanc-casse)}
+.fiche dl{display:grid;grid-template-columns:auto 1fr;gap:0;margin:0;
+  font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.04em}
+.fiche dt{padding:9px 16px 9px 0;color:var(--gris-archive);border-top:1px solid var(--beton-clair);white-space:nowrap}
+.fiche dd{margin:0;padding:9px 0;text-align:right;color:var(--blanc-casse);border-top:1px solid var(--beton-clair)}
+.fiche-texte{margin:20px 0 0;font-family:"Inter",system-ui,sans-serif;font-weight:300;
+  font-size:13px;line-height:1.75;color:var(--gris-archive)}
+.ferme-fiche{
+  float:right;background:none;border:0;cursor:pointer;
+  font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.06em;
+  color:var(--gris-archive);padding:4px 0 4px 12px;
+}
+.ferme-fiche:hover{color:var(--blanc-casse)}
+
+/* ---- Bande de vignettes ----
+   Elle défile horizontalement : sur un téléphone, une grille
+   repousserait le bouton hors de l'écran. */
+.bande{
+  display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;
+  padding:0 0 12px;margin:0 0 14px;
+  scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;justify-content:flex-start;
+}
+.bande::-webkit-scrollbar{display:none}
+/* Toutes les vignettes retirées faute d'images : la bande ne doit
+   pas garder sa marge, sinon elle laisse un blanc inexpliqué. */
+.bande:empty{display:none;margin:0;padding:0}
+.vign{
+  position:relative;flex:0 0 auto;width:74px;height:56px;padding:0;
+  border:1px solid var(--beton-clair);background:rgba(3,8,15,.6);
+  cursor:pointer;overflow:hidden;scroll-snap-align:start;
+  transition:border-color .25s ease;
+}
+.vign:hover,.vign:focus-visible{border-color:var(--cyan)}
+.vign img{width:100%;height:100%;object-fit:cover;display:block;opacity:.82;transition:opacity .25s ease}
+.vign:hover img{opacity:1}
+.vign-n{
+  position:absolute;left:4px;bottom:3px;
+  font-family:ui-monospace,monospace;font-size:8px;letter-spacing:.06em;
+  color:var(--blanc-casse);text-shadow:0 1px 3px rgba(0,0,0,.9);
+}
+@media (min-width:760px){ .bande{justify-content:center} }
+
+/* ---- Visionneuse plein écran ---- */
+.visionneuse{
+  position:fixed;inset:0;z-index:30;display:none;
+  align-items:center;justify-content:center;
+  background:rgba(3,8,15,.97);backdrop-filter:blur(14px);
+  padding:calc(58px + env(safe-area-inset-top)) 14px calc(64px + env(safe-area-inset-bottom));
+}
+.visionneuse.visible{display:flex}
+.visionneuse img{max-width:100%;max-height:100%;object-fit:contain;border:1px solid var(--beton-clair)}
+.ferme-vis{
+  position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:2;
+  background:rgba(3,8,15,.8);border:1px solid var(--beton-clair);cursor:pointer;
+  font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.06em;
+  color:var(--gris-archive);padding:11px 15px;min-height:42px;
+}
+.ferme-vis:hover{color:var(--blanc-casse);border-color:var(--cyan)}
+.nav-vis{
+  position:absolute;top:50%;transform:translateY(-50%);z-index:2;
+  width:48px;height:64px;cursor:pointer;
+  background:rgba(3,8,15,.6);border:1px solid var(--beton-clair);
+  color:var(--gris-archive);font-size:24px;line-height:1;
+}
+.nav-vis:hover{color:var(--blanc-casse);border-color:var(--cyan)}
+.nav-vis.prec{left:8px}
+.nav-vis.suiv{right:8px}
+.vis-leg{
+  position:absolute;left:0;right:0;bottom:calc(20px + env(safe-area-inset-bottom));
+  margin:0;text-align:center;padding:0 60px;
+  font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.05em;
+  color:var(--gris-archive);
+}

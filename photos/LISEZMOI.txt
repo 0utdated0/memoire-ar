@@ -1,0 +1,22 @@
+EMPLACEMENTS PHOTO
+==================
+
+Un dossier par projet. Remplacez simplement les fichiers en gardant
+leur nom : 01.jpg, 02.jpg, 03.jpg, 04.jpg.
+
+  photos/projet-01/01.jpg ... 04.jpg
+  photos/projet-02/01.jpg ... 04.jpg
+
+Les images actuelles ne sont que des repères, à remplacer.
+
+FORMAT
+  - JPEG, 1400 x 1050 environ (4:3 paysage)
+  - moins de 300 ko par image : elles se chargent sur mobile, en 4G
+  - la vignette recadre au centre, cadrez donc large
+
+AJOUTER OU RETIRER UNE IMAGE
+  Les légendes et le nombre d'images se déclarent dans le bloc
+  window.PROJET de projets/projet-0N.html, section "photos".
+
+  Une image absente retire sa vignette au lieu de laisser un trou :
+  vous pouvez donc en ajouter une seule pour commencer.

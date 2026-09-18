@@ -6,78 +6,72 @@
 <meta name="theme-color" content="#03080f">
 <title>02 / Titre du projet 02</title>
 
-<!-- Tout est construit par assets/projet.js.
-     Seul le bloc PROJET ci-dessous est à modifier. -->
+<!-- Tout est construit par assets/projet.js, et toute la mise en forme
+     vit dans assets/holo.css. Le SEUL bloc à modifier ici est
+     window.PROJET, plus bas. -->
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/holo.css?v=76">
+<link rel="stylesheet" href="../assets/holo.css?v=80">
 <script type="module" src="https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
-
-<style>
-  html,body{height:100%;margin:0;overflow:hidden;background:var(--fond)}
-
-  model-viewer{
-    position:fixed;inset:0;width:100%;height:100%;
-    --poster-color:transparent;
-    background:transparent;
-  }
-
-  .entete-projet{
-    position:fixed;top:0;left:0;right:0;z-index:14;
-    display:flex;justify-content:space-between;align-items:baseline;
-    padding:calc(14px + env(safe-area-inset-top)) var(--marge) 12px;
-    font-family:ui-monospace,"SFMono-Regular",monospace;
-    font-size:10px;letter-spacing:.06em;color:var(--gris-archive);
-    background:linear-gradient(to bottom,var(--fond) 40%,transparent);
-  }
-  .entete-projet a{color:var(--gris-archive);text-decoration:none}
-  .entete-projet a:hover{color:var(--blanc-casse)}
-
-  .bas-projet{
-    position:fixed;left:0;right:0;bottom:0;z-index:14;
-    padding:26px var(--marge) calc(20px + env(safe-area-inset-bottom));
-    background:linear-gradient(to top,var(--fond) 62%,transparent);
-    text-align:center;
-  }
-  .titre-projet{
-    margin:0 0 14px;font-family:"Inter",system-ui,sans-serif;
-    font-weight:300;font-size:16px;color:var(--blanc-casse);
-  }
-  .note{
-    margin:10px 0 0;font-family:ui-monospace,monospace;
-    font-size:10px;letter-spacing:.05em;color:var(--gris-archive);
-  }
-  .action{
-    display:block;width:100%;max-width:420px;margin:0 auto;
-    font-family:"Inter",system-ui,sans-serif;font-weight:400;font-size:14px;
-    text-align:center;cursor:pointer;border-radius:1px;
-    padding:17px;min-height:54px;
-    border:1px solid var(--bleu-blueprint);color:var(--blanc-casse);
-    background:rgba(3,8,15,.55);
-    transition:background .3s ease,color .3s ease;
-  }
-  .action:hover,.action:focus-visible{background:var(--bleu-blueprint);color:#fff}
-  .action.inactif{border-color:var(--beton-clair);color:var(--gris-archive);cursor:default}
-  .action.inactif:hover{background:rgba(3,8,15,.55);color:var(--gris-archive)}
-
-  .grain{opacity:.06}
-</style>
+<style>html,body{height:100%;margin:0;overflow:hidden;background:var(--fond)} .grain{opacity:.06}</style>
 </head>
 <body>
 
 <script>
-  /* ====== LES SEULES DONNÉES À MODIFIER ====== */
+  /* ============ LES SEULES DONNÉES À MODIFIER ============ */
   window.PROJET = {
     n:     2,
     titre: "Titre du projet 02",
-    glb:   "../modeles/projet-02.glb"
+    glb:   "../modeles/projet-02.glb",
     // usdz : chemin d'un .usdz si vous en fournissez un. Sans lui,
     // model-viewer en génère un à la volée pour iOS.
+
+    // Le modèle est déjà réduit dans le GLB : il se pose comme une
+    // maquette de 20 cm sur une table.
+    echelle: "1/581",
+
+    /* ---- Ancres posées sur la maquette ----
+       'p' est une position dans l'espace de la MAQUETTE, en mètres,
+       donc comprise entre 0 et 0,20 en hauteur. Les exprimer en
+       mètres réels les envoyait à cent mètres au-dessus du modèle,
+       où elles étaient invisibles. */
+    ancres: [
+      { p: "0.0009 0.1917 0.0086", t: "Couronnement", d: "ALT +116,19" },
+      { p: "0.0453 0.1432 0.0086", t: "Plateaux plantés", d: "13 NIVEAUX · 6,37 m" },
+      { p: "-0.0434 0.0886 0.0201", t: "Pins sylvestres", d: "H 29,40 m" },
+      { p: "0.0009 0.0301 0.0430", t: "Socle", d: "PLANTATION BASSE" }
+    ],
+
+    /* ---- Galerie ----
+       Déposez vos images dans photos/projet-02/ en gardant ces noms.
+       Une image manquante retire sa vignette au lieu de laisser un
+       trou : vous pouvez donc les ajouter une par une. */
+    photos: [
+      { src: "../photos/projet-02/01.jpg", legende: "Vue d'ensemble" },
+      { src: "../photos/projet-02/02.jpg", legende: "Un plateau planté" },
+      { src: "../photos/projet-02/03.jpg", legende: "Le noyau" },
+      { src: "../photos/projet-02/04.jpg", legende: "Maquette en situation" }
+    ],
+
+    /* ---- Relevé technique ---- */
+    fiche: [
+      ["Hauteur", "116,19 m"],
+      ["Emprise", "50 × 50 m"],
+      ["Plateaux plantés", "13"],
+      ["Entre-plateaux", "6,37 m"],
+      ["Garde-corps", "1,10 m"],
+      ["Arbres", "206"],
+      ["Plus haut sujet", "Pin sylvestre, 29,40 m"],
+      ["État", "Non bâti"],
+      ["Maquette", "1/581 — 20 cm"],
+      ["Modélisation", "Blender, glTF 2.0"]
+    ],
+    texte: "Une tour plantée : treize plateaux superposés portent deux cent six arbres, dont des pins sylvestres de près de trente mètres. L'échelle a été établie sur les garde-corps, hauts de 1,10 m, et sur l'espacement régulier des plateaux."
   };
 </script>
-<script src="../assets/projet.js?v=76"></script>
+<script src="../assets/projet.js?v=80"></script>
 
 </body>
 </html>

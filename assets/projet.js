@@ -21,7 +21,7 @@
    `ar-scale="fixed"` garantit qu'il garde cette taille.
 
    La page appelante ne déclare que :
-     PROJET = { n, titre, glb, usdz, echelle }
+     PROJET = { n, titre, glb, usdz, echelle, ancres, fiche, texte, photos }
    ============================================================ */
 (function(){
   const P = window.PROJET;
@@ -61,6 +61,14 @@
 
 <div class="bas-projet">
   <p class="titre-projet">${P.titre}</p>
+  ${(P.photos||[]).length ? `
+  <div class="bande" id="bande">
+    ${P.photos.map((ph,i) => `
+    <button class="vign" data-i="${i}" aria-label="${ph.legende || 'Image ' + (i+1)}">
+      <img src="${ph.src}" alt="" loading="lazy">
+      <span class="vign-n">${String(i+1).padStart(2,'0')}</span>
+    </button>`).join('')}
+  </div>` : ''}
   <button class="action" id="voir">Voir le bâtiment dans la pièce</button>
   <button class="lien-fiche" id="ouvre-fiche">Relevé technique</button>
   <p class="note" id="note">${P.echelle ? 'Maquette au ' + P.echelle + ' · ' : ''}faites-la tourner du doigt.</p>
@@ -71,7 +79,15 @@
   <h2>${P.titre}</h2>
   <dl>${(P.fiche||[]).map(([c,v]) => `<dt>${c}</dt><dd>${v}</dd>`).join('')}</dl>
   ${P.texte ? '<p class="fiche-texte">'+P.texte+'</p>' : ''}
-</section>`);
+</section>
+
+<div class="visionneuse" id="visionneuse" aria-hidden="true">
+  <button class="ferme-vis" id="ferme-vis" aria-label="Fermer">Fermer</button>
+  <button class="nav-vis prec" id="prec" aria-label="Précédente">‹</button>
+  <img id="vis-img" alt="">
+  <button class="nav-vis suiv" id="suiv" aria-label="Suivante">›</button>
+  <p class="vis-leg" id="vis-leg"></p>
+</div>`);
 
   const mv   = document.getElementById('mv');
   const voir = document.getElementById('voir');
@@ -122,4 +138,53 @@
   mv.addEventListener('click', () => {
     document.querySelectorAll('.ancre.ouverte').forEach(o => o.classList.remove('ouverte'));
   });
+
+  /* ---- Galerie ----
+     Une bande de vignettes sous le titre, et une visionneuse plein
+     écran au toucher. Une vignette dont l'image manque se retire
+     d'elle-même : une case vide sur la page serait pire qu'une image
+     en moins, et cela laisse ajouter les photos une par une. */
+  const photos = (P.photos || []).slice();
+  const bande  = document.getElementById('bande');
+  if(bande){
+    for(const v of bande.querySelectorAll('.vign')){
+      const img = v.querySelector('img');
+      img.addEventListener('error', () => v.remove());
+      v.addEventListener('click', () => ouvre(+v.dataset.i));
+    }
+  }
+
+  const vis = document.getElementById('visionneuse');
+  const visImg = document.getElementById('vis-img');
+  const visLeg = document.getElementById('vis-leg');
+  let courante = 0;
+
+  function ouvre(i){
+    if(!photos[i]) return;
+    courante = i;
+    visImg.src = photos[i].src;
+    visLeg.textContent = photos[i].legende || '';
+    vis.classList.add('visible');
+    vis.setAttribute('aria-hidden', 'false');
+  }
+  function ferme(){
+    vis.classList.remove('visible');
+    vis.setAttribute('aria-hidden', 'true');
+  }
+  function glisse(pas){
+    if(!photos.length) return;
+    ouvre((courante + pas + photos.length) % photos.length);
+  }
+  if(vis){
+    document.getElementById('ferme-vis').addEventListener('click', ferme);
+    document.getElementById('prec').addEventListener('click', e => { e.stopPropagation(); glisse(-1); });
+    document.getElementById('suiv').addEventListener('click', e => { e.stopPropagation(); glisse(+1); });
+    vis.addEventListener('click', e => { if(e.target === vis) ferme(); });
+    addEventListener('keydown', e => {
+      if(!vis.classList.contains('visible')) return;
+      if(e.key === 'Escape') ferme();
+      if(e.key === 'ArrowLeft')  glisse(-1);
+      if(e.key === 'ArrowRight') glisse(+1);
+    });
+  }
 })();

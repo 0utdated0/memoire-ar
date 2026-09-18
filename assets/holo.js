@@ -19,7 +19,10 @@
 function holo(hote, graine, FIL){
   if(!hote) return null;
   // Le filaire est passé en paramètre : un projet, un modèle.
-  FIL = FIL || (typeof FILAIRE_01 !== 'undefined' ? FILAIRE_01 : null);
+  // Repli sur le filaire de la page d'accueil. Il pointait vers
+  // FILAIRE_01, dont le fichier n'existe plus depuis que les pages
+  // projet affichent le vrai modèle 3D et non un filaire.
+  FIL = FIL || (typeof FILAIRE_ACCUEIL !== 'undefined' ? FILAIRE_ACCUEIL : null);
 
   let etat = graine >>> 0;
   const alea = () => {
