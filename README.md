@@ -89,7 +89,17 @@ lance la réalité augmentée. Le tap est imposé par les navigateurs.
 `model-viewer` appelle **ARKit via Quick Look** sur iOS et **ARCore via
 Scene Viewer** sur Android. Le suivi d'image, qui ancrait le modèle sur
 une vignette imprimée, a été abandonné : il tremblait et exigeait trois
-gestes. Les vignettes ne servent plus qu'à porter le QR.
+gestes. Le dessin qui entourait le QR servait à ce suivi ; il a disparu
+avec lui. Reste le QR nu, qui n'a qu'à ouvrir une page.
+
+## Les QR
+
+Un par projet, dans `qr/`, en SVG déjà dimensionné (40 mm plus la marge
+blanche exigée par la norme). Voir `qr/LISEZMOI.txt`.
+
+Ils se régénèrent avec `outils/generer-qr.py`, dont la première variable
+est l'adresse du site. **À changer avant l'impression** si vous prenez un
+nom de domaine : un QR imprimé est figé.
 
 ## Les photos
 

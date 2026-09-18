@@ -1,1 +1,40 @@
-QR generes par outils/generer-qr.py
+QR CODES
+========
+
+Un QR par projet, à imprimer dans le mémoire.
+
+  qr-projet-01.svg   ouvre projets/projet-01.html
+  qr-projet-02.svg   ouvre projets/projet-02.html
+
+Le SVG est le fichier à placer dans la maquette : vectoriel, il reste
+net à n'importe quelle taille. Les PNG (600 ppp) ne sont qu'un secours
+pour les logiciels qui refusent le SVG.
+
+TAILLE
+  Le SVG est déjà dimensionné : 40 mm de QR plus une marge blanche,
+  soit 49,7 mm au total. Importez-le à 100 %.
+
+  Vous pouvez l'agrandir. Ne le réduisez pas sous 30 mm de QR : en
+  dessous, chaque module passe sous 0,9 mm et les lecteurs peinent.
+
+LA MARGE BLANCHE FAIT PARTIE DU CODE
+  Les 4 modules blancs autour ne sont pas une marge de mise en page :
+  la norme les exige, et beaucoup de lecteurs échouent sans eux. Ne
+  rognez pas le fichier, ne posez rien dessus, ne le placez pas sur un
+  fond coloré.
+
+IMPRESSION
+  - papier mat : le brillant renvoie le flash et noie le code
+  - noir sur blanc, sans trame ni transparence
+  - pas de QR à cheval sur la pliure d'une double page
+
+CORRECTION D'ERREUR
+  Niveau M, 15 % du code peut être abîmé sans perte. Vérifié : le code
+  reste lu avec une tache au centre.
+
+REGÉNÉRER
+  python3 outils/generer-qr.py
+
+  L'adresse se règle en haut du script, variable DOMAINE. Si vous
+  prenez un nom de domaine, changez-la AVANT d'imprimer : un QR
+  imprimé est figé, et l'adresse actuelle ne se recopie pas à la main.
